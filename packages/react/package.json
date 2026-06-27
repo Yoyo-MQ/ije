@@ -1,0 +1,24 @@
+{
+  "name": "@yoyomq/ije-react",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "source": "src/index.tsx",
+  "files": ["dist", "README.md"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "node_modules/.bin/tsc"
+  },
+  "dependencies": {
+    "@yoyomq/ije-ui": "workspace:*",
+    "@yoyomq/ije-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-dom": ">=16.8.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "typescript": "latest"
+  }
+}

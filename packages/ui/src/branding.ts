@@ -1,0 +1,34 @@
+// Shared "Powered by Yoyo" footer used by every Ije widget.
+//
+// The mark inherits the surrounding text color via `currentColor` so it picks
+// up each widget's muted/foreground theming automatically.
+
+export const YOYO_ICON_SVG = `<svg viewBox="0 0 470 470" width="1em" height="1em" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="display:inline-block;vertical-align:-0.15em;flex-shrink:0;">
+  <path d="m440,370.18v-273.68c0-28.948-23.551-52.5-52.5-52.5s-52.5,23.552-52.5,52.5v20c0,20.678-16.822,37.5-37.5,37.5s-37.5-16.822-37.5-37.5v-34c0-4.143-3.358-7.5-7.5-7.5s-7.5,3.357-7.5,7.5v34c0,28.948 23.551,52.5 52.5,52.5s52.5-23.552 52.5-52.5v-20c0-20.678 16.822-37.5 37.5-37.5s37.5,16.822 37.5,37.5v273.68c-7.298,10.747-30,45.534-30,62.32 0,20.678 16.822,37.5 37.5,37.5s37.5-16.822 37.5-37.5c0-16.786-22.702-51.573-30-62.32zm-7.5,84.82c-12.407,0-22.5-10.094-22.5-22.5 0-8.191 11.706-29.571 22.501-46.439 10.794,16.862 22.499,38.239 22.499,46.439 0,12.406-10.093,22.5-22.5,22.5z"/>
+  <path d="M170,145.179V52.5c0-20.678,16.822-37.5,37.5-37.5S245,31.822,245,52.5c0,4.143,3.358,7.5,7.5,7.5s7.5-3.357,7.5-7.5 C260,23.552,236.449,0,207.5,0S155,23.552,155,52.5v92.679C68.866,149.113,0,220.412,0,307.5C0,397.103,72.897,470,162.5,470 S325,397.103,325,307.5C325,220.412,256.134,149.113,170,145.179z M162.5,455C81.168,455,15,388.832,15,307.5S81.168,160,162.5,160 S310,226.168,310,307.5S243.832,455,162.5,455z"/>
+  <path d="M162.5,185c-27.238,0-53.029,8.758-74.585,25.326c-3.284,2.524-3.9,7.232-1.376,10.517 c2.524,3.284,7.233,3.899,10.517,1.376C115.967,207.684,138.597,200,162.5,200c59.276,0,107.5,48.225,107.5,107.5 S221.776,415,162.5,415S55,366.775,55,307.5c0-23.902,7.683-46.532,22.219-65.444c2.524-3.284,1.908-7.992-1.376-10.517 c-3.283-2.522-7.992-1.908-10.517,1.376C48.758,254.471,40,280.262,40,307.5C40,375.047,94.953,430,162.5,430 S285,375.047,285,307.5S230.047,185,162.5,185z"/>
+  <circle cx="224.145" cy="338.5" r="7.5"/>
+  <circle cx="194.145" cy="368.5" r="7.5"/>
+</svg>`;
+
+// Builds the footer element. Each widget appends one as its last child.
+export function createPoweredByYoyo(): HTMLElement {
+  const footer = document.createElement('div');
+  footer.className = 'ije-powered-by';
+  footer.style.cssText = [
+    'display:flex',
+    'align-items:center',
+    'justify-content:flex-end',
+    'gap:4px',
+    'flex-shrink:0',
+    'padding:6px 2px 0',
+    'font-size:10px',
+    'line-height:1',
+    'color:var(--yoyo-muted,#a1a1aa)',
+    'font-family:var(--yoyo-font,sans-serif)',
+    'user-select:none',
+  ].join(';');
+
+  footer.innerHTML = `<span>Powered by</span>${YOYO_ICON_SVG}<span style="font-weight:600;">Yoyo</span>`;
+  return footer;
+}
