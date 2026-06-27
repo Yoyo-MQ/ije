@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Yoyo-MQ/yoyo/main/packages/sdk/assets/yoyo.svg" width="56" height="56" alt="Yoyo" />
+  <img src="https://raw.githubusercontent.com/Yoyo-MQ/ije/main/assets/yoyo.svg" width="56" height="56" alt="Yoyo" />
 </p>
 
 <h1 align="center">@yoyomq/ije-react</h1>

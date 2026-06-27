@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Yoyo-MQ/yoyo/main/packages/sdk/assets/yoyo.svg" width="72" height="72" alt="Yoyo" />
+  <img src="https://raw.githubusercontent.com/Yoyo-MQ/ije/main/assets/yoyo.svg" width="72" height="72" alt="Yoyo" />
 </p>
 
 <h1 align="center">Ije — Yoyo Embeddable SDK</h1>
