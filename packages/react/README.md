@@ -6,6 +6,10 @@
 
 <p align="center">First-class React components for the Ije SDK by <strong>Yoyo</strong>.</p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Yoyo-MQ/ije/main/assets/screenshots/tracker.gif" alt="Live device tracking" width="100%" />
+</p>
+
 ---
 
 ## Get your API key
@@ -27,13 +31,13 @@ React 16.8+ is required as a peer dependency.
 Wrap your app (or the relevant subtree) with `IjeProvider`, then drop in any component:
 
 ```tsx
-import { IjeProvider, MapTracker, TelemetryStat } from '@yoyomq/ije-react';
+import { IjeProvider, IjeDeviceTrackerView, IjeTelemetryStat } from '@yoyomq/ije-react';
 
 export default function App() {
   return (
     <IjeProvider config={{ apiKey: 'YOUR_YOYO_API_KEY' }}>
-      <MapTracker deviceId={1001} title="Vehicle Location" />
-      <TelemetryStat deviceId={1001} metric="speed" title="Speed" unit="km/h" />
+      <IjeDeviceTrackerView deviceId={1001} title="Vehicle Location" />
+      <IjeTelemetryStat deviceId={1001} metric="speed" title="Speed" unit="km/h" />
     </IjeProvider>
   );
 }
@@ -45,7 +49,7 @@ All components include `'use client'` — no extra setup needed. Place `IjeProvi
 
 ```tsx
 // app/dashboard/layout.tsx
-import { IjeProvider } from '@yoyomq/ije-react';
+import { IjeProvider, IjeDeviceTrackerView } from '@yoyomq/ije-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -58,12 +62,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 ## Components
 
-### `<MapTracker>`
+### `<IjeDeviceTrackerView>`
 
 Live map showing a device's current position and movement trail. Click the position marker to open an info bubble with speed, heading, altitude, coordinates, and timestamp. Optionally enables historical trip replay mode.
 
+<img src="https://raw.githubusercontent.com/Yoyo-MQ/ije/main/assets/screenshots/tracker.png" alt="IjeDeviceTrackerView" width="100%" />
+
 ```tsx
-<MapTracker
+<IjeDeviceTrackerView
   deviceId={1001}
   title="Vehicle Location"
   width="100%"
@@ -84,12 +90,14 @@ Live map showing a device's current position and movement trail. Click the posit
 | `startsAt` | `number` | Trip start Unix timestamp in seconds (trip-picker mode) |
 | `endsAt` | `number` | Trip end Unix timestamp in seconds (trip-picker mode) |
 
-### `<TelemetryStat>`
+### `<IjeTelemetryStat>`
 
 Single live telemetry value (speed, fuel, temperature, etc.).
 
+<img src="https://raw.githubusercontent.com/Yoyo-MQ/ije/main/assets/screenshots/stats.png" alt="IjeTelemetryStat" width="100%" />
+
 ```tsx
-<TelemetryStat deviceId={1001} metric="speed" title="Speed" unit="km/h" />
+<IjeTelemetryStat deviceId={1001} metric="speed" title="Speed" unit="km/h" />
 ```
 
 | Prop | Type | Description |
@@ -100,12 +108,14 @@ Single live telemetry value (speed, fuel, temperature, etc.).
 | `unit` | `string` | Unit label (e.g. `km/h`, `°C`) |
 | `helpMessage` | `string` | Tooltip shown on hover |
 
-### `<TelemetryChart>`
+### `<IjeTelemetryChart>`
 
 Live time-series chart for a telemetry metric.
 
+<img src="https://raw.githubusercontent.com/Yoyo-MQ/ije/main/assets/screenshots/chart.png" alt="IjeTelemetryChart" width="100%" />
+
 ```tsx
-<TelemetryChart deviceId={1001} metric="speed" title="Speed over time" height="200px" />
+<IjeTelemetryChart deviceId={1001} metric="speed" title="Speed over time" height="200px" />
 ```
 
 | Prop | Type | Description |
@@ -117,7 +127,7 @@ Live time-series chart for a telemetry metric.
 | `width` | `string` | CSS width |
 | `height` | `string` | CSS height |
 
-### `<AggregateStat>`
+### `<IjeAggregateStat>`
 
 Displays a set of aggregate metrics (totals, averages, counts) passed in as data.
 
@@ -131,7 +141,7 @@ const data: AggregateData = {
   ],
 };
 
-<AggregateStat data={data} />
+<IjeAggregateStat data={data} />
 ```
 
 | Prop | Type | Description |
@@ -139,7 +149,7 @@ const data: AggregateData = {
 | `data` | `AggregateData` | Metrics to display |
 | `loading` | `boolean` | Show loading skeleton |
 
-### `<BarChart>`
+### `<IjeBarChart>`
 
 Horizontal bar chart for comparing values across categories.
 
@@ -151,7 +161,7 @@ const data: BarChartData[] = [
   { label: 'Tue', value: 95 },
 ];
 
-<BarChart data={data} height="200px" />
+<IjeBarChart data={data} height="200px" />
 ```
 
 | Prop | Type | Description |
@@ -160,12 +170,12 @@ const data: BarChartData[] = [
 | `loading` | `boolean` | Show loading skeleton |
 | `height` | `string` | CSS height |
 
-### `<Chat>`
+### `<IjeChat>`
 
 AI-powered fleet assistant chat widget.
 
 ```tsx
-<Chat title="Fleet Assistant" placeholder="Ask about your fleet…" />
+<IjeChat title="Fleet Assistant" placeholder="Ask about your fleet…" />
 ```
 
 | Prop | Type | Description |

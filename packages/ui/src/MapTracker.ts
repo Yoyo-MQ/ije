@@ -154,8 +154,14 @@ export class IjeMapTracker extends HTMLElement {
       this.renderTelemetryBar();
       this.renderLiveBadge();
 
-      // Subscribe and seed only after SDK init resolves org context.
       document.addEventListener('ije-context-ready', this.handleContextReady as EventListener);
+
+      // If init() already completed before this element mounted, fire immediately.
+      if (Ije.config?.organizationId) {
+        this.handleContextReady(new CustomEvent('ije-context-ready', {
+          detail: { organizationId: Ije.config.organizationId },
+        }));
+      }
     }
   }
 

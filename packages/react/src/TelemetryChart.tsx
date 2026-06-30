@@ -1,6 +1,6 @@
 'use client';
 
-export interface TelemetryChartProps {
+export interface IjeTelemetryChartProps {
   deviceId: number;
   metric?: string;
   title?: string;
@@ -9,7 +9,7 @@ export interface TelemetryChartProps {
   height?: string;
 }
 
-export function TelemetryChart({ deviceId, metric, title, helpMessage, width, height }: TelemetryChartProps) {
+export function IjeTelemetryChart({ deviceId, metric, title, helpMessage, width, height }: IjeTelemetryChartProps) {
   return (
     <ije-telemetry-chart
       device-id={deviceId}

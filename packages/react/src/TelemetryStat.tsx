@@ -1,6 +1,6 @@
 'use client';
 
-export interface TelemetryStatProps {
+export interface IjeTelemetryStatProps {
   deviceId: number;
   metric: string;
   title?: string;
@@ -8,7 +8,7 @@ export interface TelemetryStatProps {
   helpMessage?: string;
 }
 
-export function TelemetryStat({ deviceId, metric, title, unit, helpMessage }: TelemetryStatProps) {
+export function IjeTelemetryStat({ deviceId, metric, title, unit, helpMessage }: IjeTelemetryStatProps) {
   return (
     <ije-telemetry-stat
       device-id={deviceId}

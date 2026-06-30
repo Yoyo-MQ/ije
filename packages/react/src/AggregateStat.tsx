@@ -3,12 +3,12 @@
 import { useEffect, useRef } from 'react';
 import type { AggregateData } from '@yoyomq/ije-ui';
 
-export interface AggregateStatProps {
+export interface IjeAggregateStatProps {
   data?: AggregateData;
   loading?: boolean;
 }
 
-export function AggregateStat({ data, loading }: AggregateStatProps) {
+export function IjeAggregateStat({ data, loading }: IjeAggregateStatProps) {
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {

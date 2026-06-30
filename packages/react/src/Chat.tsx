@@ -1,13 +1,13 @@
 'use client';
 
-export interface ChatProps {
+export interface IjeChatProps {
   title?: string;
   placeholder?: string;
   width?: string;
   height?: string;
 }
 
-export function Chat({ title, placeholder, width, height }: ChatProps) {
+export function IjeChat({ title, placeholder, width, height }: IjeChatProps) {
   return (
     <ije-chat
       title={title}
