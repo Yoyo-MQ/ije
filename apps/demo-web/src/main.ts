@@ -12,16 +12,19 @@ const tokenInput    = document.getElementById('token-input') as HTMLInputElement
 const connectBtn    = document.getElementById('connect-btn') as HTMLButtonElement;
 const statusEl      = document.getElementById('connect-status')!;
 
-const tripLoadBtn      = document.getElementById('trip-load-btn') as HTMLButtonElement;
-const tripLiveBtn      = document.getElementById('trip-live-btn') as HTMLButtonElement;
-const tripMapContainer = document.getElementById('trip-map-container') as HTMLDivElement;
+const tripLoadBtn         = document.getElementById('trip-load-btn') as HTMLButtonElement;
+const tripMapContainer    = document.getElementById('trip-map-container') as HTMLDivElement;
+const liveTrackingContent = document.getElementById('live-tracking-content') as HTMLDivElement;
+
+let organizationId: string | null = null;
+let simulationTimer: ReturnType<typeof setInterval> | null = null;
+let simulationIndex = 0;
 
 // ─── Combobox ─────────────────────────────────────────────────────────────────
 
 interface ComboItem {
   value: string;
   label: string;
-  data?: Record<string, string>;
 }
 
 class Combobox {
@@ -76,20 +79,14 @@ class Combobox {
 
   setItems(items: ComboItem[]) {
     this.items = items;
-    // Re-validate selected value
-    if (this.selectedValue !== null) {
-      const stillExists = this.items.some(i => i.value === this.selectedValue);
-      if (!stillExists) {
-        this.selectedValue = null;
-        this.inputEl.value = '';
-      }
+    if (this.selectedValue !== null && !this.items.some(i => i.value === this.selectedValue)) {
+      this.selectedValue = null;
+      this.inputEl.value = '';
     }
     this.renderDropdown(this.items);
   }
 
-  getValue(): string | null {
-    return this.selectedValue;
-  }
+  getValue(): string | null { return this.selectedValue; }
 
   getSelectedItem(): ComboItem | null {
     return this.items.find(i => i.value === this.selectedValue) ?? null;
@@ -100,17 +97,11 @@ class Combobox {
   }
 
   setDisabled(disabled: boolean) {
-    if (disabled) {
-      this.wrap.classList.add('disabled');
-      this.close();
-    } else {
-      this.wrap.classList.remove('disabled');
-    }
+    if (disabled) { this.wrap.classList.add('disabled'); this.close(); }
+    else this.wrap.classList.remove('disabled');
   }
 
-  setPlaceholder(text: string) {
-    this.inputEl.placeholder = text;
-  }
+  setPlaceholder(text: string) { this.inputEl.placeholder = text; }
 
   private open() {
     if (this.wrap.classList.contains('disabled')) return;
@@ -122,7 +113,6 @@ class Combobox {
 
   private close() {
     this.wrap.classList.remove('open');
-    // Restore display label of current selection
     const item = this.getSelectedItem();
     this.inputEl.value = item ? item.label : '';
     this.highlightedIndex = -1;
@@ -130,14 +120,10 @@ class Combobox {
 
   private onSearch() {
     const query = this.inputEl.value.toLowerCase();
-    this.filteredItems = query
-      ? this.items.filter(i => i.label.toLowerCase().includes(query))
-      : this.items;
+    this.filteredItems = query ? this.items.filter(i => i.label.toLowerCase().includes(query)) : this.items;
     this.renderDropdown(this.filteredItems);
     this.highlightedIndex = -1;
-    if (!this.wrap.classList.contains('open')) {
-      this.wrap.classList.add('open');
-    }
+    if (!this.wrap.classList.contains('open')) this.wrap.classList.add('open');
   }
 
   private onKeydown(e: KeyboardEvent) {
@@ -197,29 +183,202 @@ class Combobox {
 
 // ─── Combobox instances ───────────────────────────────────────────────────────
 
-const triggerCombo = new Combobox(
-  document.getElementById('trip-trigger-combobox')!,
+const liveDeviceCombo = new Combobox(
+  document.getElementById('live-device-combobox')!,
   'Connect first…',
 );
-const deviceCombo = new Combobox(
+
+const tripDeviceCombo = new Combobox(
   document.getElementById('trip-devices-combobox')!,
   'All devices',
 );
 
-triggerCombo.setDisabled(true);
-deviceCombo.setDisabled(true);
+const triggerCombo = new Combobox(
+  document.getElementById('trip-trigger-combobox')!,
+  'Connect first…',
+);
 
-// When the device changes, reload the trigger list filtered to that device.
-deviceCombo.onChange(async (deviceValue) => {
+liveDeviceCombo.setDisabled(true);
+tripDeviceCombo.setDisabled(true);
+triggerCombo.setDisabled(true);
+
+// ─── Live tracking ────────────────────────────────────────────────────────────
+
+document.addEventListener('ije-context-ready', (e) => {
+  organizationId = (e as CustomEvent).detail?.organizationId ?? null;
+});
+
+liveDeviceCombo.onChange((deviceValue, deviceItem) => {
+  if (!deviceValue || !deviceItem) return;
+  stopSimulation();
+  renderLiveTrackingDashboard(Number(deviceValue), deviceItem.label);
+});
+
+// ─── Simulation ───────────────────────────────────────────────────────────────
+
+function startSimulation(deviceId: number) {
+  stopSimulation();
+  simulationIndex = 0;
+
+  simulationTimer = setInterval(() => {
+    if (!organizationId) return;
+    const wp = tripData.waypoints[simulationIndex];
+    const topic = `yoyo/${organizationId}/data/devices/${deviceId}`;
+    Ije.mqtt.dispatch(topic, {
+      lat:       wp.latitude,
+      lng:       wp.longitude,
+      speed:     wp.speed,
+      altitude:  wp.altitude,
+      heading:   wp.angle,
+      battery:   parseFloat((100 - simulationIndex * 0.05).toFixed(2)),
+      timestamp: wp.timestamp * 1000,
+    });
+    simulationIndex = (simulationIndex + 1) % tripData.waypoints.length;
+  }, 800);
+}
+
+function stopSimulation() {
+  if (simulationTimer !== null) {
+    clearInterval(simulationTimer);
+    simulationTimer = null;
+  }
+}
+
+function renderLiveTrackingDashboard(deviceId: number, deviceName: string) {
+  liveTrackingContent.innerHTML = '';
+
+  const mapEl = document.createElement('ije-map-tracker');
+  const dashboardHeader = document.createElement('div');
+  dashboardHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;';
+  dashboardHeader.innerHTML = `<span style="font-size:13px;font-weight:600;color:var(--yoyo-foreground);">${deviceName}</span>`;
+
+  const simulateBtn = document.createElement('button');
+  simulateBtn.textContent = '▶ Simulate';
+  simulateBtn.style.cssText = 'padding:5px 14px;border-radius:6px;border:1px solid #8A2BE2;background:transparent;color:#8A2BE2;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;';
+  simulateBtn.addEventListener('click', () => {
+    if (simulationTimer !== null) {
+      stopSimulation();
+      simulateBtn.textContent = '▶ Simulate';
+      simulateBtn.style.background = 'transparent';
+      simulateBtn.style.color = '#8A2BE2';
+    } else {
+      startSimulation(deviceId);
+      simulateBtn.textContent = '■ Stop';
+      simulateBtn.style.background = '#8A2BE2';
+      simulateBtn.style.color = '#fff';
+    }
+  });
+  dashboardHeader.appendChild(simulateBtn);
+  liveTrackingContent.appendChild(dashboardHeader);
+
+  mapEl.setAttribute('device-id', String(deviceId));
+  mapEl.setAttribute('title', `Live — ${deviceName}`);
+  mapEl.setAttribute('height', '420px');
+  mapEl.style.cssText = 'border-radius:8px;overflow:hidden;margin-bottom:16px;display:block;';
+  liveTrackingContent.appendChild(mapEl);
+
+  const statsGrid = document.createElement('div');
+  statsGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;';
+
+  const speedWidget = document.createElement('div');
+  speedWidget.className = 'widget';
+  const speedStat = document.createElement('ije-telemetry-stat');
+  speedStat.setAttribute('device-id', String(deviceId));
+  speedStat.setAttribute('metric', 'speed');
+  speedStat.setAttribute('title', 'Speed');
+  speedStat.setAttribute('unit', 'km/h');
+  speedWidget.appendChild(speedStat);
+
+  const batteryWidget = document.createElement('div');
+  batteryWidget.className = 'widget';
+  const batteryStat = document.createElement('ije-telemetry-stat');
+  batteryStat.setAttribute('device-id', String(deviceId));
+  batteryStat.setAttribute('metric', 'battery');
+  batteryStat.setAttribute('title', 'Battery');
+  batteryStat.setAttribute('unit', '%');
+  batteryWidget.appendChild(batteryStat);
+
+  statsGrid.appendChild(speedWidget);
+  statsGrid.appendChild(batteryWidget);
+  liveTrackingContent.appendChild(statsGrid);
+
+  const chartsGrid = document.createElement('div');
+  chartsGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px;';
+
+  const speedChartWidget = document.createElement('div');
+  speedChartWidget.className = 'widget';
+  const speedChart = document.createElement('ije-telemetry-chart');
+  speedChart.setAttribute('device-id', String(deviceId));
+  speedChart.setAttribute('metric', 'speed');
+  speedChart.setAttribute('title', 'Speed over time');
+  speedChart.setAttribute('unit', 'km/h');
+  speedChart.setAttribute('height', '200px');
+  speedChartWidget.appendChild(speedChart);
+
+  const batteryChartWidget = document.createElement('div');
+  batteryChartWidget.className = 'widget';
+  const batteryChart = document.createElement('ije-telemetry-chart');
+  batteryChart.setAttribute('device-id', String(deviceId));
+  batteryChart.setAttribute('metric', 'battery');
+  batteryChart.setAttribute('title', 'Battery over time');
+  batteryChart.setAttribute('unit', '%');
+  batteryChart.setAttribute('height', '200px');
+  batteryChartWidget.appendChild(batteryChart);
+
+  chartsGrid.appendChild(speedChartWidget);
+  chartsGrid.appendChild(batteryChartWidget);
+  liveTrackingContent.appendChild(chartsGrid);
+}
+
+// ─── Trip Explorer ────────────────────────────────────────────────────────────
+
+tripDeviceCombo.onChange(async (deviceValue) => {
   const deviceId = deviceValue ? Number(deviceValue) : undefined;
   await refreshTriggers(deviceId);
 });
 
-// ─── UI helpers ──────────────────────────────────────────────────────────────
-
-function setStatus(html: string) {
-  statusEl.innerHTML = html;
+async function refreshTriggers(deviceId?: number) {
+  triggerCombo.setDisabled(true);
+  triggerCombo.setPlaceholder('Loading…');
+  try {
+    const { triggers } = await Ije.trips.listTriggers({ limit: 200, deviceId });
+    triggerCombo.setItems(triggers.map(t => ({ value: String(t.id), label: t.name })));
+    triggerCombo.setPlaceholder(triggers.length ? 'Search triggers…' : 'No triggers found');
+  } catch {
+    triggerCombo.setPlaceholder('Failed to load');
+    triggerCombo.setItems([]);
+  }
+  triggerCombo.setDisabled(false);
 }
+
+function loadTrips() {
+  const triggerId = triggerCombo.getValue();
+  if (!triggerId) return;
+
+  tripMapContainer.innerHTML = '';
+
+  const mapEl = document.createElement('ije-map-tracker');
+  mapEl.setAttribute('trip-picker', '');
+  mapEl.setAttribute('trigger-id', triggerId);
+
+  const deviceId = tripDeviceCombo.getValue();
+  if (deviceId) mapEl.setAttribute('device-ids', deviceId);
+
+  const triggerName = triggerCombo.getSelectedItem()?.label || '';
+  if (triggerName) mapEl.setAttribute('trigger-name', triggerName);
+
+  mapEl.setAttribute('height', '500px');
+  mapEl.setAttribute('title', 'Trip Explorer');
+  mapEl.style.cssText = 'border-radius:8px;overflow:hidden;display:block;';
+
+  tripMapContainer.appendChild(mapEl);
+}
+
+tripLoadBtn.addEventListener('click', loadTrips);
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+
+function setStatus(html: string) { statusEl.innerHTML = html; }
 
 function showConnectedBar() {
   connectPanel.style.display = 'none';
@@ -227,63 +386,67 @@ function showConnectedBar() {
   connectBarLbl.innerHTML = `<span class="status-dot green"></span>Connected · ${Ije.config?.apiUrl ?? 'api.yoyomq.com'}`;
 }
 
-function revealDashboard() {
+async function revealDashboard() {
   dashboard.style.display = 'flex';
-  populateStaticWidgets();
+  populateAnalyticsWidgets();
+  await populateDevicePickers();
 }
 
-// ─── Static widget data ───────────────────────────────────────────────────────
+// ─── Analytics widgets ────────────────────────────────────────────────────────
 
-function populateStaticWidgets() {
-  const agg = document.getElementById('demo-agg');
-  if (agg) {
-    agg.setAttribute('data-json', JSON.stringify({
+function populateAnalyticsWidgets() {
+  const aggEl = document.getElementById('demo-agg') as any;
+  if (aggEl) {
+    aggEl.data = {
       title: 'Telemetry throughput',
-      description: 'Ingested device_data rows whose message timestamp falls in the last 24-hour rolling window.',
+      description: 'Ingested device_data rows in the last 24-hour rolling window.',
       metrics: [
         { label: 'Messages',  value: '1,452,000' },
-        { label: 'Per hour',  value: '60,500.00' },
+        { label: 'Per hour',  value: '60,500' },
         { label: 'In scope',  value: '342' },
       ],
-    }));
+    };
   }
 
-  const bar = document.getElementById('demo-bar');
-  if (bar) {
-    bar.setAttribute('data-json', JSON.stringify([
-      { name: '2026-04-01', total: 120 },
-      { name: '2026-04-02', total: 156 },
-      { name: '2026-04-03', total: 94  },
-      { name: '2026-04-04', total: 204 },
-      { name: '2026-04-05', total: 180 },
-      { name: '2026-04-06', total: 212 },
-    ]));
+  const barEl = document.getElementById('demo-bar') as any;
+  if (barEl) {
+    barEl.data = [
+      { name: 'Mon', total: 120 },
+      { name: 'Tue', total: 156 },
+      { name: 'Wed', total: 94  },
+      { name: 'Thu', total: 204 },
+      { name: 'Fri', total: 180 },
+      { name: 'Sat', total: 212 },
+      { name: 'Sun', total: 88  },
+    ];
   }
 }
 
-// ─── MQTT telemetry loop ──────────────────────────────────────────────────────
+// ─── Populate device pickers ──────────────────────────────────────────────────
 
-function startTelemetryLoop() {
-  let index = 0;
+async function populateDevicePickers() {
+  liveDeviceCombo.setPlaceholder('Loading devices…');
 
-  setTimeout(() => {
-    setInterval(() => {
-      const wp = tripData.waypoints[index];
+  try {
+    const { devices } = await Ije.trips.listDevices({ limit: 500 });
+    const deviceItems = devices.map(d => ({
+      value: String(d.device_id),
+      label: d.name || d.identifier,
+    }));
 
-      Ije.mqtt.dispatch('device/truck-001/location', {
-        lat: wp.latitude,
-        lng: wp.longitude,
-      });
+    liveDeviceCombo.setItems(deviceItems);
+    liveDeviceCombo.setPlaceholder(devices.length ? 'Select a device…' : 'No devices found');
+    liveDeviceCombo.setDisabled(false);
 
-      Ije.mqtt.dispatch('device/truck-001/telemetry', {
-        speed:     wp.speed,
-        battery:   parseFloat((100 - index * 0.05).toFixed(2)),
-        timestamp: wp.timestamp * 1000,
-      });
+    tripDeviceCombo.setItems(deviceItems);
+    tripDeviceCombo.setPlaceholder('All devices');
+    tripDeviceCombo.setDisabled(false);
+  } catch {
+    liveDeviceCombo.setPlaceholder('Failed to load devices');
+    tripDeviceCombo.setPlaceholder('Failed to load devices');
+  }
 
-      index = (index + 1) % tripData.waypoints.length;
-    }, 1000);
-  }, 2000);
+  await refreshTriggers();
 }
 
 // ─── Connection flow ──────────────────────────────────────────────────────────
@@ -293,7 +456,13 @@ async function connect(apiKey: string) {
   setStatus(`<span class="status-dot pulse" style="background:#8A2BE2;"></span>Connecting…`);
 
   try {
-    await Ije.init({ apiKey, apiUrl: import.meta.env.VITE_API_URL, mqttUrl: import.meta.env.VITE_MQTT_URL, theme: { primaryColor: '#8A2BE2' }, debug: true });
+    await Ije.init({
+      apiKey,
+      apiUrl: import.meta.env.VITE_API_URL,
+      mqttUrl: import.meta.env.VITE_MQTT_URL,
+      theme: { primaryColor: '#8A2BE2' },
+      debug: true,
+    });
   } catch (err: any) {
     setStatus(`<span class="status-dot red"></span>Connection failed: ${err?.message ?? 'unknown error'}`);
     connectBtn.disabled = false;
@@ -301,112 +470,19 @@ async function connect(apiKey: string) {
   }
 
   showConnectedBar();
-  revealDashboard();
-  // startTelemetryLoop();
-  void populateTripPickers();
+  await revealDashboard();
 }
 
-// ─── Trip Explorer ─────────────────────────────────────────────────────────────
-
-async function refreshTriggers(deviceId?: number) {
-  triggerCombo.setDisabled(true);
-  triggerCombo.setPlaceholder('Loading…');
-  try {
-    const { triggers } = await Ije.trips.listTriggers({ limit: 200, deviceId });
-    triggerCombo.setItems(
-      triggers.map(t => ({ value: String(t.id), label: t.name }))
-    );
-    triggerCombo.setPlaceholder(triggers.length ? 'Search triggers…' : 'No triggers found');
-  } catch {
-    triggerCombo.setPlaceholder('Failed to load');
-    triggerCombo.setItems([]);
-  }
-  triggerCombo.setDisabled(false);
-}
-
-async function populateTripPickers() {
-  // Load triggers and devices in parallel.
-  const [, devicesResult] = await Promise.allSettled([
-    refreshTriggers(),
-    Ije.trips.listDevices({ limit: 500 }),
-  ]);
-
-  if (devicesResult.status === 'fulfilled') {
-    const { devices } = devicesResult.value;
-    deviceCombo.setItems(
-      devices.map(d => ({
-        value: String(d.device_id),
-        label: d.name || d.identifier,
-        data: { identifier: d.identifier },
-      }))
-    );
-    deviceCombo.setPlaceholder('All devices');
-  }
-  deviceCombo.setDisabled(false);
-}
-
-// Creates a fresh trip-picker map each time; attributes must be set before mount
-// so IjeMapTracker reads them in connectedCallback.
-function loadTrips() {
-  const triggerId = triggerCombo.getValue();
-  if (!triggerId) return;
-
-  tripMapContainer.innerHTML = '';
-
-  const map = document.createElement('ije-map-tracker');
-  map.setAttribute('trip-picker', '');
-  map.setAttribute('trigger-id', triggerId);
-
-  const deviceId = deviceCombo.getValue();
-  if (deviceId) map.setAttribute('device-ids', deviceId);
-
-  const triggerName = triggerCombo.getSelectedItem()?.label || '';
-  if (triggerName) map.setAttribute('trigger-name', triggerName);
-
-  map.setAttribute('height', '500px');
-  map.setAttribute('title', 'Trip Explorer');
-  map.style.borderRadius = '8px';
-  map.style.overflow = 'hidden';
-
-  tripMapContainer.appendChild(map);
-}
-
-function loadLiveTracking() {
-  const numericId = deviceCombo.getValue();
-  const selectedItem = deviceCombo.getSelectedItem();
-  const identifier = selectedItem?.data?.identifier;
-
-  if (!numericId || !identifier) {
-    alert('Please select a specific device to start live tracking.');
-    return;
-  }
-
-  tripMapContainer.innerHTML = '';
-
-  const map = document.createElement('ije-map-tracker');
-  map.setAttribute('device-id', identifier);
-  map.setAttribute('numeric-device-id', numericId);
-  map.setAttribute('height', '500px');
-  map.setAttribute('title', `Live – ${selectedItem.label}`);
-  map.style.borderRadius = '8px';
-  map.style.overflow = 'hidden';
-
-  tripMapContainer.appendChild(map);
-}
-
-tripLoadBtn.addEventListener('click', loadTrips);
-tripLiveBtn.addEventListener('click', loadLiveTracking);
-
-// ─── Event listeners ──────────────────────────────────────────────────────────
+window.addEventListener('beforeunload', stopSimulation);
 
 connectBtn.addEventListener('click', () => {
   const token = tokenInput.value.trim();
-  if (token) connect(token);
+  if (token) void connect(token);
 });
 
 tokenInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     const token = tokenInput.value.trim();
-    if (token) connect(token);
+    if (token) void connect(token);
   }
 });

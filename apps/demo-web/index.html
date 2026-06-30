@@ -10,12 +10,18 @@
         --yoyo-background: #ffffff;
         --yoyo-card-bg: #f4f4f5;
         --yoyo-border: #e4e4e7;
+        --yoyo-muted: #71717a;
+        --yoyo-tag-bg: #e4e4e7;
       }
       html.dark {
         --yoyo-foreground: #fafafa;
         --yoyo-background: #09090b;
         --yoyo-card-bg: #18181b;
         --yoyo-border: #27272a;
+        --yoyo-muted: #a1a1aa;
+        --yoyo-tag-bg: #27272a;
+        --yoyo-grid-stroke: rgba(255,255,255,0.08);
+        --yoyo-axis-stroke: #71717a;
       }
       * { box-sizing: border-box; }
       body {
@@ -32,12 +38,11 @@
       .widget { background: var(--yoyo-background); border: 1px solid var(--yoyo-border); padding: 1.5rem; border-radius: 8px; transition: background 0.3s, border 0.3s; }
 
       /* ── Connection panel ── */
-      #ije-connect-panel { display: block; }
       #ije-connect-panel .connect-header {
         display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
       }
       #ije-connect-panel h2 { margin: 0; font-size: 18px; }
-      #ije-connect-panel p { margin: 0 0 16px; font-size: 13px; color: #71717a; line-height: 1.6; }
+      #ije-connect-panel p { margin: 0 0 16px; font-size: 13px; color: var(--yoyo-muted); line-height: 1.6; }
       .connect-row { display: flex; gap: 8px; align-items: stretch; }
       #token-input {
         flex: 1; padding: 9px 14px; border-radius: 8px; font-size: 13px;
@@ -70,7 +75,7 @@
       #ije-connect-bar button {
         font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
         border: 1px solid var(--yoyo-border); background: var(--yoyo-background);
-        color: #71717a; font-family: inherit;
+        color: var(--yoyo-muted); font-family: inherit;
       }
 
       /* ── Dashboard ── */
@@ -91,8 +96,8 @@
         color: var(--yoyo-foreground); font-size: 13px; font-family: inherit;
         min-width: 0; cursor: pointer;
       }
-      .combo-input input::placeholder { color: #71717a; }
-      .combo-arrow { font-size: 10px; color: #71717a; flex-shrink: 0; transition: transform 0.15s; }
+      .combo-input input::placeholder { color: var(--yoyo-muted); }
+      .combo-arrow { font-size: 10px; color: var(--yoyo-muted); flex-shrink: 0; transition: transform 0.15s; }
       .combo-wrap.open .combo-arrow { transform: rotate(180deg); }
       .combo-dropdown {
         display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
@@ -107,8 +112,15 @@
       }
       .combo-option:hover, .combo-option.highlighted { background: rgba(138,43,226,0.1); }
       .combo-option.selected { font-weight: 600; color: #8A2BE2; }
-      .combo-empty { padding: 8px 14px; font-size: 13px; color: #71717a; font-style: italic; }
+      .combo-empty { padding: 8px 14px; font-size: 13px; color: var(--yoyo-muted); font-style: italic; }
       .combo-wrap.disabled .combo-input { opacity: 0.5; cursor: default; pointer-events: none; }
+
+      /* ── Placeholder shown before a device is picked ── */
+      .pick-device-placeholder {
+        display: flex; align-items: center; justify-content: center;
+        border: 1px dashed var(--yoyo-border); border-radius: 8px;
+        padding: 48px 24px; color: var(--yoyo-muted); font-size: 13px;
+      }
     </style>
   </head>
   <body class="dark">
@@ -125,7 +137,7 @@
           </button>
         </div>
         <p>Paste your Yoyo API key to connect and explore live data.</p>
-        <ul style="font-size:13px;color:var(--yoyo-muted,#666);margin:8px 0 14px 0;padding-left:18px;line-height:1.8;">
+        <ul style="font-size:13px;color:var(--yoyo-muted);margin:8px 0 14px 0;padding-left:18px;line-height:1.8;">
           <li>Sign in to your <a href="https://yoyomq.com" target="_blank" style="color:#8A2BE2;">Yoyo</a> account</li>
           <li>Go to <strong>Settings → API Keys</strong></li>
           <li>Create a new key and paste it below</li>
@@ -146,82 +158,72 @@
       <!-- ── Main Dashboard ── -->
       <div id="ije-dashboard">
 
+        <!-- ── Live Tracking ── -->
         <div class="card">
           <div style="margin-bottom: 1rem;">
             <h1 style="margin: 0 0 4px;"><span class="brand">Ije</span> Live Tracking</h1>
-            <p style="margin: 0; font-size: 13px; color: #71717a;">
-              Map and telemetry update via MQTT. Charts below respond to AI queries over your data.
+            <p style="margin: 0; font-size: 13px; color: var(--yoyo-muted);">
+              Select a device to see its live position, telemetry stats, and time-series charts — all updated in real time over MQTT.
             </p>
           </div>
 
-          <!-- Map -->
-          <!--<ije-map-tracker
-            device-id="truck-001"
-            height="500px"
-            title="Vehicle Location"
-            help-message="Live view powered by MapLibre WebGL"
-            style="border-radius: 8px; overflow: hidden; margin-bottom: 2rem;">
-          </ije-map-tracker>-->
-
-          <!-- Live stat cards -->
-          <!--
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-            <div class="widget">
-              <ije-telemetry-stat device-id="truck-001" metric="speed"   title="Velocity"        unit="MPH"></ije-telemetry-stat>
-            </div>
-            <div class="widget">
-              <ije-telemetry-stat device-id="truck-001" metric="battery" title="Chassis Battery"  unit="%"></ije-telemetry-stat>
-            </div>
+          <div class="connect-row" style="margin-bottom: 16px;">
+            <div id="live-device-combobox" class="combo-wrap disabled"></div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+          <div id="live-tracking-content">
+            <div class="pick-device-placeholder">Select a device above to start live tracking</div>
+          </div>
+        </div>
+
+        <!-- ── Aggregate & Bar charts ── -->
+        <div class="card">
+          <div style="margin-bottom: 1rem;">
+            <h2 style="margin: 0 0 4px;"><span class="brand">Ije</span> Analytics</h2>
+            <p style="margin: 0; font-size: 13px; color: var(--yoyo-muted);">
+              Aggregate stats and daily message volume across your fleet.
+            </p>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <ije-aggregate-stat id="demo-agg" class="widget"></ije-aggregate-stat>
-            <ije-bar-chart      id="demo-bar" height="200px" class="widget"></ije-bar-chart>
+            <ije-bar-chart id="demo-bar" height="200px" class="widget"></ije-bar-chart>
+          </div>
+        </div>
+
+        <!-- ── Trip Explorer ── -->
+        <div class="card">
+          <div style="margin-bottom: 1rem;">
+            <h2 style="margin: 0 0 4px;"><span class="brand">Ije</span> Trip Explorer</h2>
+            <p style="margin: 0; font-size: 13px; color: var(--yoyo-muted);">
+              Step through a Trigger's trips and plot each route on the map.
+            </p>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-            <div class="widget">
-              <ije-telemetry-chart device-id="truck-001" metric="speed"   title="Current Speed"   help-message="Speed in MPH"            height="200px"></ije-telemetry-chart>
-            </div>
-            <div class="widget">
-              <ije-telemetry-chart device-id="truck-001" metric="battery" title="Battery Reserve" help-message="Remaining chassis charge" height="200px"></ije-telemetry-chart>
-            </div>
+          <div class="connect-row" style="margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+            <div id="trip-devices-combobox" class="combo-wrap disabled"></div>
+            <div id="trip-trigger-combobox" class="combo-wrap disabled"></div>
+            <button id="trip-load-btn"
+              style="padding:9px 20px;border-radius:8px;border:none;cursor:pointer;background:#8A2BE2;color:#fff;font-size:13px;font-weight:600;font-family:inherit;white-space:nowrap;">
+              Load Trips
+            </button>
           </div>
-          -->
 
-          <!-- AI Chat -->
+          <div id="trip-map-container"></div>
+        </div>
+
+        <!-- ── AI Chat ── -->
+        <div class="card">
+          <div style="margin-bottom: 1rem;">
+            <h2 style="margin: 0 0 4px;"><span class="brand">Ije</span> Fleet Assistant</h2>
+            <p style="margin: 0; font-size: 13px; color: var(--yoyo-muted);">
+              AI-powered chat over your fleet data — ask about devices, trips, speed, battery, and more.
+            </p>
+          </div>
           <ije-chat
             title="Fleet Assistant"
             placeholder="Ask about your fleet — devices, speed, battery, trips…"
             height="480px">
           </ije-chat>
-        </div>
-
-        <!-- ── Trip Explorer (historical trips via the public API) ── -->
-        <div class="card">
-          <div style="margin-bottom: 1rem;">
-            <h1 style="margin: 0 0 4px;"><span class="brand">Ije</span> Trip Explorer</h1>
-            <p style="margin: 0; font-size: 13px; color: #71717a;">
-              Step through a Trigger's trips and plot each route on the map. Uses the public API
-              (<code>/public/api/v1</code>) — requires a valid Yoyo API key.
-            </p>
-          </div>
-
-          <div class="connect-row" style="margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
-            <div id="trip-trigger-combobox" class="combo-wrap disabled"></div>
-            <div id="trip-devices-combobox" class="combo-wrap disabled"></div>
-            <button id="trip-load-btn"
-              style="padding:9px 20px;border-radius:8px;border:none;cursor:pointer;background:#8A2BE2;color:#fff;font-size:13px;font-weight:600;font-family:inherit;white-space:nowrap;">
-              Load Trips
-            </button>
-            <button id="trip-live-btn"
-              style="padding:9px 20px;border-radius:8px;border:none;cursor:pointer;background:#16a34a;color:#fff;font-size:13px;font-weight:600;font-family:inherit;white-space:nowrap;display:flex;align-items:center;gap:6px;">
-              <span style="width:7px;height:7px;background:#fff;border-radius:50%;display:inline-block;opacity:0.85;"></span>Go Live
-            </button>
-          </div>
-
-          <!-- The trip-picker map element is created here on demand by main.ts. -->
-          <div id="trip-map-container"></div>
         </div>
 
       </div><!-- #ije-dashboard -->
