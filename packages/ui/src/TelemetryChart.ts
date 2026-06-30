@@ -7,6 +7,7 @@ export class IjeTelemetryChart extends HTMLElement {
   private chart: uPlot | null = null;
   private deviceId: string | null = null;
   private metric: string | null = null;
+  private liveTopic: string | null = null;
   
   // uPlot fundamentally requires data as an array of arrays: [ [X values], [Y values] ]
   private xData: number[] = [];
@@ -47,18 +48,30 @@ export class IjeTelemetryChart extends HTMLElement {
     this.footerDiv = footer;
     this.appendChild(footer);
 
-    if (this.deviceId) {
-      // Subscribe specifically to the telemetry sub-topic for this device
-      Ije.mqtt.subscribe(`device/${this.deviceId}/telemetry`, this.handleTelemetry);
+    if (this.deviceId && Ije.config?.organizationId) {
+      this.liveTopic = `yoyo/${Ije.config.organizationId}/data/devices/${this.deviceId}`;
+      Ije.mqtt.subscribe(this.liveTopic, this.handleTelemetry);
     }
+
+    document.addEventListener('ije-context-ready', this.handleContextReady as EventListener);
   }
 
   disconnectedCallback() {
-    if (this.deviceId) {
-      Ije.mqtt.unsubscribe(`device/${this.deviceId}/telemetry`, this.handleTelemetry);
-    }
+    if (this.liveTopic) Ije.mqtt.unsubscribe(this.liveTopic, this.handleTelemetry);
+    document.removeEventListener('ije-context-ready', this.handleContextReady as EventListener);
     this.chart?.destroy();
   }
+
+  private handleContextReady = (e: Event) => {
+    const { organizationId } = (e as CustomEvent).detail;
+    if (!organizationId || !this.deviceId) return;
+    const newTopic = `yoyo/${organizationId}/data/devices/${this.deviceId}`;
+    if (newTopic !== this.liveTopic) {
+      if (this.liveTopic) Ije.mqtt.unsubscribe(this.liveTopic, this.handleTelemetry);
+      this.liveTopic = newTopic;
+      Ije.mqtt.subscribe(this.liveTopic, this.handleTelemetry);
+    }
+  };
 
   private renderHeader() {
     if (!this.headerDiv) {
@@ -80,7 +93,7 @@ export class IjeTelemetryChart extends HTMLElement {
         ${titleText}
       </div>
       ${helpAttr ? `
-      <div title="${helpAttr}" style="cursor: help; color: var(--yoyo-muted, #888); font-size: 12px; background: #eee; border-radius: 4px; padding: 2px 6px;">
+      <div title="${helpAttr}" style="cursor: help; color: var(--yoyo-muted, #888); font-size: 12px; background: var(--yoyo-tag-bg, #eee); border-radius: 4px; padding: 2px 6px;">
         ?
       </div>` : ''}
     `;
@@ -95,6 +108,11 @@ export class IjeTelemetryChart extends HTMLElement {
 
     const primaryColor = Ije.config?.theme?.primaryColor || '#8A2BE2';
 
+    // Resolve CSS custom properties now — canvas 2D API can't use them directly.
+    const cs = getComputedStyle(this);
+    const gridStroke = cs.getPropertyValue('--yoyo-grid-stroke').trim() || 'rgba(0,0,0,0.08)';
+    const axisStroke = cs.getPropertyValue('--yoyo-axis-stroke').trim() || '#999';
+
     const buildOpts = (width: number, height: number): uPlot.Options => ({
       width,
       height,
@@ -105,8 +123,8 @@ export class IjeTelemetryChart extends HTMLElement {
       // it makes the uPlot root exactly `height`, so it fits the host cleanly.
       legend: { show: false },
       axes: [
-        { grid: { show: false } },
-        { grid: { stroke: 'rgba(0,0,0,0.05)' } },
+        { grid: { show: false }, stroke: axisStroke, ticks: { stroke: gridStroke } },
+        { grid: { stroke: gridStroke }, stroke: axisStroke, ticks: { stroke: gridStroke } },
       ],
       series: [
         {},

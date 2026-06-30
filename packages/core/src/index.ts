@@ -92,6 +92,11 @@ export class IjeSDK {
         const ctx = await this.http.get<{ organization_id: string }>('/public/api/v1/context');
         if (ctx.organization_id) {
           this.config.organizationId = ctx.organization_id;
+          if (typeof document !== 'undefined') {
+            document.dispatchEvent(new CustomEvent('ije-context-ready', {
+              detail: { organizationId: ctx.organization_id },
+            }));
+          }
         }
       } catch {
         console.warn('[Yoyo ije] Could not resolve organization ID; live tracking topic may not match');

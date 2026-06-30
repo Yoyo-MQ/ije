@@ -124,11 +124,14 @@
             Toggle Theme
           </button>
         </div>
-        <p>
-          Paste your JWT token to connect and explore insights conversations against your live data.
-        </p>
+        <p>Paste your Yoyo API key to connect and explore live data.</p>
+        <ul style="font-size:13px;color:var(--yoyo-muted,#666);margin:8px 0 14px 0;padding-left:18px;line-height:1.8;">
+          <li>Sign in to your <a href="https://yoyomq.com" target="_blank" style="color:#8A2BE2;">Yoyo</a> account</li>
+          <li>Go to <strong>Settings → API Keys</strong></li>
+          <li>Create a new key and paste it below</li>
+        </ul>
         <div class="connect-row">
-          <input id="token-input" type="text" placeholder="eyJ…" spellcheck="false" autocomplete="off" />
+          <input id="token-input" type="text" placeholder="Your Yoyo API key…" spellcheck="false" autocomplete="off" />
           <button id="connect-btn">Connect</button>
         </div>
         <div id="connect-status"></div>
@@ -200,7 +203,7 @@
             <h1 style="margin: 0 0 4px;"><span class="brand">Ije</span> Trip Explorer</h1>
             <p style="margin: 0; font-size: 13px; color: #71717a;">
               Step through a Trigger's trips and plot each route on the map. Uses the public API
-              (<code>/public/api/v1</code>) — the connected token must be a Yoyo API key.
+              (<code>/public/api/v1</code>) — requires a valid Yoyo API key.
             </p>
           </div>
 

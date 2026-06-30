@@ -16,13 +16,15 @@ export class IjeTelemetryStat extends HTMLElement {
     if (name === 'title' || name === 'help-message' || name === 'metric') {
       this.metric = this.getAttribute('metric');
       this.renderHeader();
-    } // No immediate re-render needed for unit, it catches on next tick
+    }
   }
+
+  private liveTopic: string | null = null;
 
   connectedCallback() {
     this.deviceId = this.getAttribute('device-id');
     this.metric = this.getAttribute('metric');
-    
+
     this.style.display = 'flex';
     this.style.flexDirection = 'column';
     this.style.width = this.getAttribute('width') || '100%';
@@ -32,16 +34,30 @@ export class IjeTelemetryStat extends HTMLElement {
     this.renderValueArea();
     this.appendChild(createPoweredByYoyo());
 
-    if (this.deviceId && this.metric) {
-      Ije.mqtt.subscribe(`device/${this.deviceId}/telemetry`, this.handleTelemetry);
+    // Subscribe immediately if org context is already resolved, otherwise wait.
+    if (this.deviceId && this.metric && Ije.config?.organizationId) {
+      this.liveTopic = `yoyo/${Ije.config.organizationId}/data/devices/${this.deviceId}`;
+      Ije.mqtt.subscribe(this.liveTopic, this.handleTelemetry);
     }
+
+    document.addEventListener('ije-context-ready', this.handleContextReady as EventListener);
   }
 
   disconnectedCallback() {
-    if (this.deviceId) {
-      Ije.mqtt.unsubscribe(`device/${this.deviceId}/telemetry`, this.handleTelemetry);
-    }
+    if (this.liveTopic) Ije.mqtt.unsubscribe(this.liveTopic, this.handleTelemetry);
+    document.removeEventListener('ije-context-ready', this.handleContextReady as EventListener);
   }
+
+  private handleContextReady = (e: Event) => {
+    const { organizationId } = (e as CustomEvent).detail;
+    if (!organizationId || !this.deviceId || !this.metric) return;
+    const newTopic = `yoyo/${organizationId}/data/devices/${this.deviceId}`;
+    if (newTopic !== this.liveTopic) {
+      if (this.liveTopic) Ije.mqtt.unsubscribe(this.liveTopic, this.handleTelemetry);
+      this.liveTopic = newTopic;
+      Ije.mqtt.subscribe(this.liveTopic, this.handleTelemetry);
+    }
+  };
 
   private renderHeader() {
     if (!this.headerDiv) {
