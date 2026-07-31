@@ -46,7 +46,9 @@ export class IjeTelemetryChart extends HTMLElement {
     this.initChart();
     const footer = createPoweredByYoyo();
     this.footerDiv = footer;
-    this.appendChild(footer);
+    if (footer) {
+      this.appendChild(footer);
+    }
 
     if (this.deviceId && Ije.config?.organizationId) {
       this.liveTopic = `yoyo/${Ije.config.organizationId}/data/devices/${this.deviceId}`;

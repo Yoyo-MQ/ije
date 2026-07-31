@@ -51,7 +51,10 @@ export class IjeAggregateStat extends HTMLElement {
     this.render();
     // Appended once as a sibling of the container; render() only rewrites the
     // container's innerHTML, so the footer survives data updates.
-    this.appendChild(createPoweredByYoyo());
+    const poweredByFooter = createPoweredByYoyo();
+    if (poweredByFooter) {
+      this.appendChild(poweredByFooter);
+    }
   }
 
   private render() {
