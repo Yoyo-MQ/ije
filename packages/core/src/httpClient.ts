@@ -11,6 +11,17 @@ interface PostOptions {
   // reserved for future options
 }
 
+export class IjeApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly errorCode: string | null,
+    public readonly errorMessage: string | null,
+  ) {
+    super(`[Yoyo ije] Request failed: ${status} ${errorMessage ?? errorCode ?? ''}`);
+    this.name = 'IjeApiError';
+  }
+}
+
 export class IjeHttpClient {
   private config: SdkConfig | null = null;
 
@@ -67,7 +78,16 @@ export class IjeHttpClient {
   private async parseResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      throw new Error(`[Yoyo ije] Request failed: ${response.status} ${body}`);
+      let errorCode: string | null = null;
+      let errorMessage: string | null = null;
+      try {
+        const parsed = JSON.parse(body) as { error?: { code?: string; message?: string } };
+        errorCode = parsed.error?.code ?? null;
+        errorMessage = parsed.error?.message ?? null;
+      } catch {
+        errorMessage = body || null;
+      }
+      throw new IjeApiError(response.status, errorCode, errorMessage);
     }
     return response.json() as Promise<T>;
   }
