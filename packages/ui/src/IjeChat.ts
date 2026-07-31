@@ -363,10 +363,12 @@ export class IjeChat extends HTMLElement {
 
     // ── Powered by Yoyo ──
     const footer = createPoweredByYoyo();
-    footer.style.justifyContent = 'center';
-    footer.style.padding = '8px';
-    footer.style.background = 'var(--yoyo-card-bg,#f4f4f5)';
-    this.appendChild(footer);
+    if (footer) {
+      footer.style.justifyContent = 'center';
+      footer.style.padding = '8px';
+      footer.style.background = 'var(--yoyo-card-bg,#f4f4f5)';
+      this.appendChild(footer);
+    }
 
     this._addMessage('assistant', 'Hi! I can answer questions about your fleet — try asking about device counts, speed trends, battery levels, or trip history.');
   }

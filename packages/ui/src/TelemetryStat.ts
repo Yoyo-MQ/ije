@@ -32,7 +32,10 @@ export class IjeTelemetryStat extends HTMLElement {
 
     this.renderHeader();
     this.renderValueArea();
-    this.appendChild(createPoweredByYoyo());
+    const poweredByFooter = createPoweredByYoyo();
+    if (poweredByFooter) {
+      this.appendChild(poweredByFooter);
+    }
 
     // Subscribe immediately if org context is already resolved, otherwise wait.
     if (this.deviceId && this.metric && Ije.config?.organizationId) {

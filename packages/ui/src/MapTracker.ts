@@ -64,7 +64,10 @@ export class IjeMapTracker extends HTMLElement {
     mapDiv.style.height = '100%';
     wrapper.appendChild(mapDiv);
 
-    this.appendChild(createPoweredByYoyo());
+    const poweredByFooter = createPoweredByYoyo();
+    if (poweredByFooter) {
+      this.appendChild(poweredByFooter);
+    }
 
     // When this component is inside a display:none parent at page load (e.g. a
     // hidden dashboard), MapLibre initialises with a zero-size canvas and the

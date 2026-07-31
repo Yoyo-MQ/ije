@@ -61,6 +61,13 @@ export class IjeSDK {
   public chat: IjeChatClient;
   public trips: IjeTripsClient;
   public http: IjeHttpClient;
+  /**
+   * Server-resolved Whitelabelling entitlement (GET /public/api/v1/context). When true, widgets
+   * omit the "Powered by Yoyo" footer (see branding.ts's createPoweredByYoyo()). Always starts
+   * false and only flips on a successful, explicit true from the server — never settable by the
+   * embedding app itself, since that would make the entitlement trivially fakeable.
+   */
+  public whitelabellingEnabled = false;
 
   private constructor() {
     this.mqtt = new IjeMqttManager();
@@ -99,13 +106,18 @@ export class IjeSDK {
     this.trips._setConfig(this.config);
     this.http._setConfig(this.config);
 
-    // Resolve the organization UUID so UI widgets can build correct MQTT topics.
-    // Non-fatal: widgets fall back to legacy topic format when not available.
+    // Resolve the organization UUID so UI widgets can build correct MQTT topics, and the
+    // Whitelabelling entitlement so widgets know whether to render "Powered by Yoyo".
+    // Non-fatal: widgets fall back to legacy topic format / keep showing the badge when not
+    // available — the entitlement always fails closed (badge stays visible) on any error.
     if (!this.config.organizationId) {
       try {
-        const ctx = await this.http.get<{ organization_id: string }>('/public/api/v1/context');
+        const ctx = await this.http.get<{ organization_id: string; whitelabelling_enabled?: boolean }>(
+          '/public/api/v1/context'
+        );
         if (ctx.organization_id) {
           this.config.organizationId = ctx.organization_id;
+          this.whitelabellingEnabled = ctx.whitelabelling_enabled ?? false;
           if (typeof document !== 'undefined') {
             document.dispatchEvent(new CustomEvent('ije-context-ready', {
               detail: { organizationId: ctx.organization_id },

@@ -53,7 +53,10 @@ export class IjeBarChart extends HTMLElement {
     this.svgWrapper.style.minHeight = '0';
     this.appendChild(this.svgWrapper);
 
-    this.appendChild(createPoweredByYoyo());
+    const poweredByFooter = createPoweredByYoyo();
+    if (poweredByFooter) {
+      this.appendChild(poweredByFooter);
+    }
 
     this.resizeObserver = new ResizeObserver(() => {
         // Debounce resize to prevent thousands of redraws
