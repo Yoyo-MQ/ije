@@ -1,5 +1,5 @@
 import type { ChatChartSpec } from '@yoyomq/ije-core';
-import { Ije } from '@yoyomq/ije-core';
+import { AiCreditsExhaustedError, Ije } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 
 const CHART_PALETTE = ['#8A2BE2', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
@@ -435,7 +435,11 @@ export class IjeChat extends HTMLElement {
       this._addMessage('assistant', response.answer, response.chart);
     } catch (err) {
       console.error('[Ije] Chat error:', err);
-      this._addMessage('assistant', 'Sorry, I ran into an error. Please try again.');
+      if (err instanceof AiCreditsExhaustedError) {
+        this._addMessage('assistant', err.message);
+      } else {
+        this._addMessage('assistant', 'Sorry, I ran into an error. Please try again.');
+      }
     } finally {
       this._setLoading(false);
       this.inputEl?.focus();
@@ -446,6 +450,23 @@ export class IjeChat extends HTMLElement {
     if (this.messagesEl) this.messagesEl.innerHTML = '';
     Ije.chat.resetSession();
     this._addMessage('assistant', 'New conversation started. What would you like to know?');
+  }
+
+  /**
+   * Replace the visible conversation with a past transcript (e.g. from Ije.chat.getConversation()),
+   * so the widget shows prior turns before the user continues asking questions. Pair with
+   * Ije.chat.resumeSession(sessionId) so the next ask() continues the same session server-side —
+   * this method only affects what's rendered, it does not call resumeSession() itself.
+   */
+  loadHistory(messages: Array<{ question: string; answer: string | null; chart?: ChatChartSpec }>) {
+    if (!this.messagesEl) return;
+    this.messagesEl.innerHTML = '';
+    for (const message of messages) {
+      this._addMessage('user', message.question);
+      if (message.answer) {
+        this._addMessage('assistant', message.answer, message.chart);
+      }
+    }
   }
 }
 

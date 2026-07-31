@@ -3,7 +3,16 @@ import { IjeChatClient } from './chatClient';
 import { IjeTripsClient } from './tripsClient';
 import { IjeHttpClient } from './httpClient';
 
-export type { ChatChartSpec, ChatResponse } from './chatClient';
+export type {
+  ChatChartSpec,
+  ChatResponse,
+  IjeConversationSummary,
+  IjeConversationsResponse,
+  IjeConversationMessage,
+  IjeConversationDetail,
+} from './chatClient';
+export { AiCreditsExhaustedError } from './chatClient';
+export { IjeApiError } from './httpClient';
 export type {
   IjeTrigger,
   IjeDevice,
