@@ -78,8 +78,13 @@ export class IjeSDK {
 
   public async init(config: SdkConfig): Promise<void> {
     if (this.isInitialized) {
-      console.warn('[Yoyo ije] SDK is already initialized');
-      return;
+      if (this.config?.apiKey === config.apiKey) {
+        console.warn('[Yoyo ije] SDK is already initialized');
+        return;
+      }
+      // Re-initializing with a different API key (e.g. correcting one that was invalid) — drop
+      // the old MQTT connection so mqtt.connect() below doesn't no-op and keep using it.
+      this.mqtt.disconnect();
     }
 
     this.config = {
