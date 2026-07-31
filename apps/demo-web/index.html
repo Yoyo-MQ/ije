@@ -121,6 +121,37 @@
         border: 1px dashed var(--yoyo-border); border-radius: 8px;
         padding: 48px 24px; color: var(--yoyo-muted); font-size: 13px;
       }
+
+      /* ── Conversation history ── */
+      #chat-history-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+      .history-item {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 9px 12px; border-radius: 8px; border: 1px solid var(--yoyo-border);
+        background: var(--yoyo-background); font-size: 12px; cursor: pointer;
+      }
+      .history-item:hover { border-color: #8A2BE2; }
+      .history-item .history-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .history-item .history-meta { color: var(--yoyo-muted); flex-shrink: 0; }
+      .history-empty, .history-loading { font-size: 12px; color: var(--yoyo-muted); font-style: italic; }
+      #chat-history-more {
+        font-size: 12px; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+        border: 1px solid var(--yoyo-border); background: var(--yoyo-background);
+        color: var(--yoyo-muted); font-family: inherit; display: none;
+      }
+      #chat-history-transcript {
+        display: none; margin-top: 12px; padding: 12px 14px; border-radius: 8px;
+        border: 1px solid var(--yoyo-border); background: var(--yoyo-background);
+        max-height: 280px; overflow-y: auto; font-size: 12px;
+      }
+      .transcript-turn { margin-bottom: 10px; }
+      .transcript-turn:last-child { margin-bottom: 0; }
+      .transcript-q { font-weight: 600; margin-bottom: 3px; }
+      .transcript-a { color: var(--yoyo-muted); line-height: 1.5; }
+      .transcript-chart { margin-top: 4px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--yoyo-muted); }
+      #chat-history-resume {
+        margin-top: 10px; padding: 7px 16px; border-radius: 6px; border: none; cursor: pointer;
+        background: #8A2BE2; color: #fff; font-size: 12px; font-weight: 600; font-family: inherit;
+      }
     </style>
   </head>
   <body class="dark">
@@ -220,10 +251,25 @@
             </p>
           </div>
           <ije-chat
+            id="fleet-chat"
             title="Fleet Assistant"
             placeholder="Ask about your fleet — devices, speed, battery, trips…"
             height="480px">
           </ije-chat>
+
+          <!-- ── Conversation history: Ije.chat.listConversations() / getConversation() / resumeSession() ── -->
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--yoyo-border);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <h3 style="margin: 0; font-size: 14px;">Past Conversations</h3>
+              <button id="chat-history-refresh"
+                style="font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--yoyo-border); background: var(--yoyo-background); color: var(--yoyo-muted); font-family: inherit;">
+                Refresh
+              </button>
+            </div>
+            <div id="chat-history-list"><div class="history-loading">Connect to load conversation history…</div></div>
+            <button id="chat-history-more">Load more</button>
+            <div id="chat-history-transcript"></div>
+          </div>
         </div>
 
       </div><!-- #ije-dashboard -->

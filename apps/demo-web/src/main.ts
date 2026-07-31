@@ -1,4 +1,5 @@
 import { Ije } from '@yoyomq/ije-core';
+import type { IjeConversationSummary } from '@yoyomq/ije-core';
 import '@yoyomq/ije-ui';
 import { tripData } from './data';
 
@@ -15,6 +16,12 @@ const statusEl      = document.getElementById('connect-status')!;
 const tripLoadBtn         = document.getElementById('trip-load-btn') as HTMLButtonElement;
 const tripMapContainer    = document.getElementById('trip-map-container') as HTMLDivElement;
 const liveTrackingContent = document.getElementById('live-tracking-content') as HTMLDivElement;
+
+const fleetChatEl          = document.getElementById('fleet-chat') as HTMLElement;
+const historyListEl        = document.getElementById('chat-history-list') as HTMLDivElement;
+const historyMoreBtn       = document.getElementById('chat-history-more') as HTMLButtonElement;
+const historyRefreshBtn    = document.getElementById('chat-history-refresh') as HTMLButtonElement;
+const historyTranscriptEl  = document.getElementById('chat-history-transcript') as HTMLDivElement;
 
 let organizationId: string | null = null;
 let simulationTimer: ReturnType<typeof setInterval> | null = null;
@@ -390,6 +397,7 @@ async function revealDashboard() {
   dashboard.style.display = 'flex';
   populateAnalyticsWidgets();
   await populateDevicePickers();
+  await loadConversationHistory(true);
 }
 
 // ─── Analytics widgets ────────────────────────────────────────────────────────
@@ -448,6 +456,109 @@ async function populateDevicePickers() {
 
   await refreshTriggers();
 }
+
+// ─── Conversation history (Ije.chat.listConversations / getConversation / resumeSession) ──────
+
+let historyNextCursor: { lastActivityAt: string; sessionId: string } | null = null;
+
+async function loadConversationHistory(reset: boolean) {
+  if (reset) {
+    historyListEl.innerHTML = '<div class="history-loading">Loading…</div>';
+    historyNextCursor = null;
+    historyTranscriptEl.style.display = 'none';
+  }
+
+  try {
+    const { sessions, has_more } = await Ije.chat.listConversations({
+      limit: 10,
+      cursorLastActivityAt: historyNextCursor?.lastActivityAt,
+      cursorSessionId: historyNextCursor?.sessionId,
+    });
+
+    if (reset) historyListEl.innerHTML = '';
+    if (reset && sessions.length === 0) {
+      historyListEl.innerHTML = '<div class="history-empty">No past conversations yet — ask the Fleet Assistant something above.</div>';
+    }
+    for (const session of sessions) {
+      historyListEl.appendChild(renderHistoryItem(session));
+    }
+
+    if (sessions.length > 0) {
+      const last = sessions[sessions.length - 1];
+      historyNextCursor = { lastActivityAt: last.last_activity_at, sessionId: last.session_id };
+    }
+    historyMoreBtn.style.display = has_more ? 'inline-block' : 'none';
+  } catch {
+    if (reset) historyListEl.innerHTML = '<div class="history-empty">Failed to load conversation history.</div>';
+  }
+}
+
+function renderHistoryItem(session: IjeConversationSummary): HTMLElement {
+  const item = document.createElement('div');
+  item.className = 'history-item';
+
+  const title = document.createElement('span');
+  title.className = 'history-title';
+  title.textContent = session.title;
+
+  const meta = document.createElement('span');
+  meta.className = 'history-meta';
+  meta.textContent = `${session.turn_count} turn${session.turn_count === 1 ? '' : 's'} · ${new Date(session.last_activity_at).toLocaleString()}`;
+
+  item.appendChild(title);
+  item.appendChild(meta);
+  item.addEventListener('click', () => void showConversationTranscript(session.session_id));
+  return item;
+}
+
+async function showConversationTranscript(sessionId: string) {
+  historyTranscriptEl.style.display = 'block';
+  historyTranscriptEl.innerHTML = '<div class="history-loading">Loading transcript…</div>';
+
+  try {
+    const { messages } = await Ije.chat.getConversation(sessionId);
+    historyTranscriptEl.innerHTML = '';
+
+    for (const message of messages) {
+      const turn = document.createElement('div');
+      turn.className = 'transcript-turn';
+
+      const question = document.createElement('div');
+      question.className = 'transcript-q';
+      question.textContent = message.question;
+      turn.appendChild(question);
+
+      const answer = document.createElement('div');
+      answer.className = 'transcript-a';
+      answer.textContent = message.answer ?? '(no answer recorded)';
+      turn.appendChild(answer);
+
+      if (message.chart) {
+        const chart = document.createElement('div');
+        chart.className = 'transcript-chart';
+        chart.textContent = `📊 ${message.chart.chart_type} chart: "${message.chart.title}"`;
+        turn.appendChild(chart);
+      }
+
+      historyTranscriptEl.appendChild(turn);
+    }
+
+    const resumeBtn = document.createElement('button');
+    resumeBtn.id = 'chat-history-resume';
+    resumeBtn.textContent = 'Continue this conversation ↑';
+    resumeBtn.addEventListener('click', () => {
+      Ije.chat.resumeSession(sessionId);
+      (fleetChatEl as any).loadHistory(messages);
+      fleetChatEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    historyTranscriptEl.appendChild(resumeBtn);
+  } catch {
+    historyTranscriptEl.innerHTML = '<div class="history-empty">Failed to load transcript.</div>';
+  }
+}
+
+historyRefreshBtn.addEventListener('click', () => void loadConversationHistory(true));
+historyMoreBtn.addEventListener('click', () => void loadConversationHistory(false));
 
 // ─── Connection flow ──────────────────────────────────────────────────────────
 

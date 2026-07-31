@@ -4,3 +4,4 @@ dist/
 *.local
 .env*
 assets/screenshots/_frames/
+.idea/
