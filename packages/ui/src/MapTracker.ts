@@ -3,10 +3,17 @@ import { Ije, type IjeAggregatedEvent } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 
 export class IjeMapTracker extends HTMLElement {
+  // Comfortably covers a multi-hour trip at typical device send intervals (5-30s) while keeping
+  // the live-updated GeoJSON trail bounded.
+  private static readonly MAX_TRAIL_POINTS = 1000;
+
   private map: maplibregl.Map | null = null;
   private deviceId: string | null = null;
   private liveTopic: string | null = null;
   private trailCoordinates: [number, number][] = [];
+  // The trail's own [0] is trimmed as MAX_TRAIL_POINTS is exceeded, so the "start of trip"
+  // marker needs its own immutable anchor rather than reading trailCoordinates[0].
+  private tripStartCoordinate: [number, number] | null = null;
   private lastPayload: Record<string, any> | null = null;
   private markerPopup: maplibregl.Popup | null = null;
 
@@ -253,11 +260,22 @@ export class IjeMapTracker extends HTMLElement {
       const dist = Math.sqrt(Math.pow(last[0] - lng, 2) + Math.pow(last[1] - lat, 2));
       if (dist > 0.002) { // roughly > 200m teleportation instantly jumps to a new trip or loopback
         this.trailCoordinates = [];
+        this.tripStartCoordinate = null;
       }
     }
 
+    if (this.tripStartCoordinate === null) {
+      this.tripStartCoordinate = [lng, lat];
+    }
+
     this.trailCoordinates.push([lng, lat]);
-    
+    // Keep memory (and the GeoJSON re-serialized/re-uploaded to the map source on every single
+    // update) bounded for long-running live sessions — a multi-hour shift would otherwise grow
+    // this array forever.
+    if (this.trailCoordinates.length > IjeMapTracker.MAX_TRAIL_POINTS) {
+      this.trailCoordinates.shift();
+    }
+
     const features: any[] = [
         {
           type: 'Feature',
@@ -266,12 +284,14 @@ export class IjeMapTracker extends HTMLElement {
         }
     ];
 
-    if (this.trailCoordinates.length > 0) {
+    if (this.tripStartCoordinate) {
         features.push({
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: this.trailCoordinates[0] },
+          geometry: { type: 'Point', coordinates: this.tripStartCoordinate },
           properties: { markerType: 'start' }
         });
+    }
+    if (this.trailCoordinates.length > 0) {
         features.push({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: this.trailCoordinates[this.trailCoordinates.length - 1] },
