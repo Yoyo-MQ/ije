@@ -25,19 +25,42 @@ function resolveEntityTemplate(template: string, entity: EntityReference): strin
   });
 }
 
-/** Wraps each entity's label (first occurrence) in a clickable span, resolved or not — resolution
- *  happens in the click handler so the same markup works whether resolvers are configured yet. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Wraps every occurrence of each entity's label in a clickable span, resolved or not — resolution
+ *  happens in the click handler so the same markup works whether resolvers are configured yet.
+ *  Matches all labels in a single pass, longest first, so a shorter label that's a prefix/substring
+ *  of a longer one (e.g. "Truck 1" vs "Truck 10") can't match inside it or inside an already-inserted
+ *  span. Repeated identical labels cycle through their entities in order of appearance, so a label
+ *  mentioned more times than it has distinct entities keeps linking to the last one rather than
+ *  falling back to plain text. */
 function linkifyEntities(html: string, entities: EntityReference[]): string {
-  let result = html;
-  entities.forEach((entity, index) => {
-    const escapedLabel = escapeHtml(entity.label);
-    if (!escapedLabel || !result.includes(escapedLabel)) return;
-    result = result.replace(
-      escapedLabel,
-      `<span data-ije-entity-index="${index}" style="color:var(--yoyo-primary,#8A2BE2);font-weight:600;cursor:pointer;border-bottom:1px dashed currentColor;">${escapedLabel}</span>`,
-    );
+  const labeled = entities
+    .map((entity, index) => ({ index, escapedLabel: escapeHtml(entity.label) }))
+    .filter((e) => e.escapedLabel.length > 0);
+  if (labeled.length === 0) return html;
+
+  const indicesByLabel = new Map<string, number[]>();
+  for (const { escapedLabel, index } of labeled) {
+    const indices = indicesByLabel.get(escapedLabel) ?? [];
+    indices.push(index);
+    indicesByLabel.set(escapedLabel, indices);
+  }
+
+  const uniqueLabels = [...indicesByLabel.keys()].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(uniqueLabels.map(escapeRegExp).join('|'), 'g');
+
+  const consumedByLabel = new Map<string, number>();
+  return html.replace(pattern, (match) => {
+    const consumed = consumedByLabel.get(match) ?? 0;
+    const indices = indicesByLabel.get(match);
+    const entityIndex = indices?.[consumed % indices.length];
+    if (entityIndex === undefined) return match;
+    consumedByLabel.set(match, consumed + 1);
+    return `<span data-ije-entity-index="${entityIndex}" style="color:var(--yoyo-primary,#8A2BE2);font-weight:600;cursor:pointer;border-bottom:1px dashed currentColor;">${match}</span>`;
   });
-  return result;
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -586,13 +609,20 @@ export class IjeChat extends HTMLElement {
    * Ije.chat.resumeSession(sessionId) so the next ask() continues the same session server-side —
    * this method only affects what's rendered, it does not call resumeSession() itself.
    */
-  loadHistory(messages: Array<{ question: string; answer: string | null; chart?: ChatChartSpec }>) {
+  loadHistory(
+    messages: Array<{
+      question: string;
+      answer: string | null;
+      chart?: ChatChartSpec;
+      entity_references?: EntityReference[];
+    }>,
+  ) {
     if (!this.messagesEl) return;
     this.messagesEl.innerHTML = '';
     for (const message of messages) {
       this._addMessage('user', message.question);
       if (message.answer) {
-        this._addMessage('assistant', message.answer, message.chart);
+        this._addMessage('assistant', message.answer, message.chart, message.entity_references);
       }
     }
   }

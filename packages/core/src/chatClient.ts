@@ -51,6 +51,7 @@ export interface IjeConversationMessage {
   question: string;
   answer: string | null;
   chart?: ChatChartSpec;
+  entity_references?: EntityReference[];
   created_at: string;
   completed_at: string | null;
 }
