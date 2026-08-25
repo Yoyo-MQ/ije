@@ -186,17 +186,72 @@ Plots a rolling window (last 100 points) of one metric over time (uPlot).
 ### `<ije-chat>` — fleet assistant
 
 A chat UI that sends questions to the Yoyo insights API and renders the answer,
-including any returned chart (bar/line/pie/scatter/table).
+including any returned chart (bar/line/pie/scatter/table) and any entity references
+(devices, triggers, trips) the answer mentions.
 
 | Attribute | Description |
 |-----------|-------------|
 | `title` | Header title (default `Fleet Assistant`) |
 | `placeholder` | Input placeholder |
 | `width` / `height` | CSS size (default `100%` × `520px`) |
+| `resource-link-resolvers` | JSON string mapping entity type → URL template. Equivalent to setting the `.resourceLinkResolvers` property. See [Entity links](#entity-links-in-chat-responses) below. |
 
 ```html
 <ije-chat title="Fleet Assistant" placeholder="Ask about your fleet…" height="520px"></ije-chat>
 ```
+
+#### Entity links in chat responses
+
+An answer can reference specific devices, triggers, or trips. By default these render
+as plain text with an inline detail popover (fetched from the public API — no host
+cooperation required). If your app has real pages for some of these, tell `<ije-chat>`
+how to link to them:
+
+```html
+<script>
+  document.querySelector('ije-chat').resourceLinkResolvers = {
+    devices: '/devices/{id}',
+    triggers: '/triggers/{id}',
+    // no entry for "trips" — trip mentions keep using the built-in popover
+  };
+</script>
+```
+
+or, with no build step, as a JSON attribute:
+
+```html
+<ije-chat resource-link-resolvers='{"devices":"/devices/{id}","triggers":"/triggers/{id}"}'></ije-chat>
+```
+
+**Template placeholders.** `{field}` is replaced with the matching field from the
+entity reference. Every currently-supported entity type and its fields:
+
+| Type | Fields | Example template |
+|------|--------|-------------------|
+| `devices` | `id` | `/devices/{id}` |
+| `triggers` | `id` | `/triggers/{id}` |
+| `trips` | `id`, `deviceId` | `/devices/{deviceId}/playback?trip={id}` |
+
+Leave a type out of `resourceLinkResolvers` (or omit the prop entirely) and it falls
+back to the popover — never a broken link. Ije, not the LLM, owns this list; the
+Anthropic-side agent only ever returns entity references drawn from it, so a template
+here can't go stale from a model change.
+
+**Handling clicks in a single-page app.** A resolved link is a real `href` — right-click
+"open in new tab" works — but clicking it first dispatches a cancelable
+`ije-entity-navigate` `CustomEvent` (`detail: { entity, href }`) before falling back to
+a plain navigation. Call `preventDefault()` to take over with your own router instead:
+
+```ts
+document.querySelector('ije-chat').addEventListener('ije-entity-navigate', (e) => {
+  e.preventDefault();
+  router.push(e.detail.href); // client-side nav, no full page reload
+});
+```
+
+Hosts that never configure `resourceLinkResolvers` or this listener still get a fully
+working experience — just via the popover and plain navigation instead of an SPA-aware
+one.
 
 ### `<ije-aggregate-stat>` — static multi-metric card
 
@@ -246,8 +301,11 @@ Everything hangs off the `Ije` singleton from `@yoyomq/ije-core`.
 
 ```ts
 const res = await Ije.chat.ask('How many devices reported in the last hour?');
-console.log(res.answer);  // string
-console.log(res.chart);   // optional ChatChartSpec
+console.log(res.answer);    // string
+console.log(res.chart);     // optional ChatChartSpec
+console.log(res.entityReferences);  // EntityReference[] — devices/triggers/trips the answer mentions,
+                             // resolved to links by <ije-chat> if you're using the widget;
+                             // resolve them yourself here if you're driving the chat UI by hand
 Ije.chat.resetSession();  // start a fresh conversation
 ```
 
