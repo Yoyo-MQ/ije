@@ -17,10 +17,19 @@ export interface ChatChartSpec {
   datasets: Array<{ label: string; data: number[] }>;
 }
 
+export interface EntityReference {
+  entity_type: 'devices' | 'triggers' | 'trips' | 'workflows';
+  id: string;
+  label: string;
+  /** Required when entity_type is 'trips' — the id of the device the trip belongs to. */
+  device_id?: string;
+}
+
 export interface ChatResponse {
   session_id: string;
   answer: string;
   chart?: ChatChartSpec;
+  entity_references?: EntityReference[];
 }
 
 /** One AI conversation session, as listed by IjeChatClient.listConversations(). */

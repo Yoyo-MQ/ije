@@ -1,8 +1,12 @@
-import type { ChatChartSpec } from '@yoyomq/ije-core';
+import type { ChatChartSpec, EntityReference } from '@yoyomq/ije-core';
 import { AiCreditsExhaustedError, Ije } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 
 const CHART_PALETTE = ['#8A2BE2', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
+
+/** Maps an entity type to a URL template with {field} placeholders, e.g. { devices: '/devices/{id}' }.
+ *  A type with no entry (or no resolvers configured at all) falls back to an inline popover. */
+export type ResourceLinkResolvers = Partial<Record<EntityReference['entity_type'], string>>;
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -12,6 +16,28 @@ function formatAnswer(text: string): string {
   return escapeHtml(text)
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br>');
+}
+
+function resolveEntityTemplate(template: string, entity: EntityReference): string {
+  return template.replace(/\{(\w+)\}/g, (_match, field: string) => {
+    const value = (entity as unknown as Record<string, unknown>)[field];
+    return value != null ? String(value) : '';
+  });
+}
+
+/** Wraps each entity's label (first occurrence) in a clickable span, resolved or not — resolution
+ *  happens in the click handler so the same markup works whether resolvers are configured yet. */
+function linkifyEntities(html: string, entities: EntityReference[]): string {
+  let result = html;
+  entities.forEach((entity, index) => {
+    const escapedLabel = escapeHtml(entity.label);
+    if (!escapedLabel || !result.includes(escapedLabel)) return;
+    result = result.replace(
+      escapedLabel,
+      `<span data-ije-entity-index="${index}" style="color:var(--yoyo-primary,#8A2BE2);font-weight:600;cursor:pointer;border-bottom:1px dashed currentColor;">${escapedLabel}</span>`,
+    );
+  });
+  return result;
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -235,12 +261,34 @@ export class IjeChat extends HTMLElement {
   private sendBtn: HTMLButtonElement | null = null;
   private typingIndicatorEl: HTMLDivElement | null = null;
   private isLoading = false;
+  private _resourceLinkResolvers: ResourceLinkResolvers = {};
+  /** Entities for the currently-rendered messages, indexed to match each bubble's data-ije-entity-index. */
+  private entitiesByMessage: EntityReference[][] = [];
+  private popoverEl: HTMLDivElement | null = null;
 
   static get observedAttributes() {
     return ['title', 'placeholder', 'height'];
   }
 
+  /** URL templates per entity type, e.g. { devices: '/devices/{id}' }. A type with no entry falls
+   *  back to an inline popover instead of a dead link. */
+  get resourceLinkResolvers(): ResourceLinkResolvers {
+    return this._resourceLinkResolvers;
+  }
+
+  set resourceLinkResolvers(value: ResourceLinkResolvers) {
+    this._resourceLinkResolvers = value ?? {};
+  }
+
   connectedCallback() {
+    const attrResolvers = this.getAttribute('resource-link-resolvers');
+    if (attrResolvers && Object.keys(this._resourceLinkResolvers).length === 0) {
+      try {
+        this._resourceLinkResolvers = JSON.parse(attrResolvers);
+      } catch {
+        console.error('[Ije] resource-link-resolvers attribute is not valid JSON.');
+      }
+    }
     this.style.cssText = `
       display:flex; flex-direction:column;
       width:${this.getAttribute('width') || '100%'};
@@ -298,6 +346,7 @@ export class IjeChat extends HTMLElement {
     // ── Messages area ──
     this.messagesEl = document.createElement('div');
     this.messagesEl.style.cssText = 'flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;';
+    this.messagesEl.addEventListener('click', (e) => this._handleEntityClick(e));
     this.appendChild(this.messagesEl);
 
     // ── Typing indicator ──
@@ -371,7 +420,12 @@ export class IjeChat extends HTMLElement {
     this._addMessage('assistant', 'Hi! I can answer questions about your fleet — try asking about device counts, speed trends, battery levels, or trip history.');
   }
 
-  private _addMessage(role: 'user' | 'assistant', text: string, chart?: ChatChartSpec) {
+  private _addMessage(
+    role: 'user' | 'assistant',
+    text: string,
+    chart?: ChatChartSpec,
+    entities?: EntityReference[],
+  ) {
     if (!this.messagesEl) return;
     const primaryColor = Ije.config?.theme?.primaryColor || '#8A2BE2';
     const isUser = role === 'user';
@@ -392,7 +446,15 @@ export class IjeChat extends HTMLElement {
     if (isUser) {
       bubble.textContent = text;
     } else {
-      bubble.innerHTML = formatAnswer(text);
+      const formatted = formatAnswer(text);
+      if (entities?.length) {
+        const messageIndex = this.entitiesByMessage.length;
+        this.entitiesByMessage.push(entities);
+        bubble.innerHTML = linkifyEntities(formatted, entities);
+        bubble.dataset.ijeMessageIndex = String(messageIndex);
+      } else {
+        bubble.innerHTML = formatted;
+      }
       if (chart) {
         bubble.appendChild(buildChartElement(chart, primaryColor));
       }
@@ -401,6 +463,72 @@ export class IjeChat extends HTMLElement {
     row.appendChild(bubble);
     this.messagesEl.appendChild(row);
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /** Delegated click handler for entity spans rendered by linkifyEntities. Resolved entities
+   *  dispatch a cancelable ije-entity-navigate event before falling back to a plain navigation;
+   *  unresolved ones (no matching resourceLinkResolvers entry) show an inline popover instead. */
+  private _handleEntityClick(e: MouseEvent) {
+    const target = (e.target as HTMLElement).closest('[data-ije-entity-index]') as HTMLElement | null;
+    if (!target) return;
+    const bubble = target.closest('[data-ije-message-index]') as HTMLElement | null;
+    if (!bubble) return;
+
+    const entities = this.entitiesByMessage[Number(bubble.dataset.ijeMessageIndex)];
+    const entity = entities?.[Number(target.dataset.ijeEntityIndex)];
+    if (!entity) return;
+
+    const template = this._resourceLinkResolvers[entity.entity_type];
+    if (!template) {
+      this._showEntityPopover(target, entity);
+      return;
+    }
+
+    const href = resolveEntityTemplate(template, entity);
+    const navigateEvent = new CustomEvent('ije-entity-navigate', {
+      detail: { entity, href },
+      bubbles: true,
+      cancelable: true,
+    });
+    this.dispatchEvent(navigateEvent);
+    if (!navigateEvent.defaultPrevented) {
+      window.location.href = href;
+    }
+  }
+
+  /** Minimal fallback for an entity with no configured resolver — shows what the SDK already
+   *  knows (type, label, id) rather than a dead link. Dismissed by any subsequent click. */
+  private _showEntityPopover(anchor: HTMLElement, entity: EntityReference) {
+    this.popoverEl?.remove();
+
+    const popover = document.createElement('div');
+    popover.style.cssText = `
+      position:absolute;z-index:10;max-width:220px;padding:10px 12px;border-radius:8px;
+      background:var(--yoyo-card-bg,#f4f4f5);border:1px solid var(--yoyo-border,#e4e4e7);
+      box-shadow:0 8px 24px rgba(0,0,0,0.15);font-size:12px;color:var(--yoyo-foreground,inherit);
+    `;
+    const singularType = entity.entity_type.replace(/s$/, '');
+    popover.innerHTML = `
+      <div style="font-weight:600;margin-bottom:2px;">${escapeHtml(entity.label)}</div>
+      <div style="color:var(--yoyo-muted,#888);">${escapeHtml(singularType)} · ${escapeHtml(entity.id)}</div>
+    `;
+
+    const anchorRect = anchor.getBoundingClientRect();
+    const hostRect = this.getBoundingClientRect();
+    popover.style.left = `${anchorRect.left - hostRect.left}px`;
+    popover.style.top = `${anchorRect.bottom - hostRect.top + 6}px`;
+
+    this.style.position = this.style.position || 'relative';
+    this.appendChild(popover);
+    this.popoverEl = popover;
+
+    const dismiss = (evt: MouseEvent) => {
+      if (evt.target === anchor) return;
+      popover.remove();
+      document.removeEventListener('click', dismiss, true);
+    };
+    // Capture phase, next tick — otherwise this same click immediately dismisses it.
+    setTimeout(() => document.addEventListener('click', dismiss, true), 0);
   }
 
   private _setLoading(loading: boolean) {
@@ -432,7 +560,7 @@ export class IjeChat extends HTMLElement {
 
     try {
       const response = await Ije.chat.ask(question);
-      this._addMessage('assistant', response.answer, response.chart);
+      this._addMessage('assistant', response.answer, response.chart, response.entity_references);
     } catch (err) {
       console.error('[Ije] Chat error:', err);
       if (err instanceof AiCreditsExhaustedError) {

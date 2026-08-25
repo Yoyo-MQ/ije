@@ -202,16 +202,17 @@ including any returned chart (bar/line/pie/scatter/table) and any entity referen
 
 #### Entity links in chat responses
 
-An answer can reference specific devices, triggers, or trips. By default these render
-as plain text with an inline detail popover (fetched from the public API — no host
-cooperation required). If your app has real pages for some of these, tell `<ije-chat>`
-how to link to them:
+An answer can reference specific devices, triggers, trips, or workflows. By default
+these render as plain text with an inline detail popover (built from the entity
+reference itself — no host cooperation or network call required). If your app has
+real pages for some of these, tell `<ije-chat>` how to link to them:
 
 ```html
 <script>
   document.querySelector('ije-chat').resourceLinkResolvers = {
     devices: '/devices/{id}',
     triggers: '/triggers/{id}',
+    workflows: '/workflows/{id}',
     // no entry for "trips" — trip mentions keep using the built-in popover
   };
 </script>
@@ -224,13 +225,16 @@ or, with no build step, as a JSON attribute:
 ```
 
 **Template placeholders.** `{field}` is replaced with the matching field from the
-entity reference. Every currently-supported entity type and its fields:
+entity reference — field names are the raw ones on `EntityReference` (snake_case,
+`device_id` not `deviceId`), not a camelCased version. Every currently-supported
+entity type and its fields:
 
 | Type | Fields | Example template |
 |------|--------|-------------------|
 | `devices` | `id` | `/devices/{id}` |
 | `triggers` | `id` | `/triggers/{id}` |
-| `trips` | `id`, `deviceId` | `/devices/{deviceId}/playback?trip={id}` |
+| `trips` | `id`, `device_id` | `/devices/{device_id}/playback?trip={id}` |
+| `workflows` | `id` | `/workflows/{id}` |
 
 Leave a type out of `resourceLinkResolvers` (or omit the prop entirely) and it falls
 back to the popover — never a broken link. Ije, not the LLM, owns this list; the
