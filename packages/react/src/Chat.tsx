@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import type { ResourceLinkResolvers } from '@yoyomq/ije-ui';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import type { IjeChat as IjeChatElement, ResourceLinkResolvers } from '@yoyomq/ije-ui';
 
 export interface IjeChatProps {
   title?: string;
@@ -13,8 +13,17 @@ export interface IjeChatProps {
   resourceLinkResolvers?: ResourceLinkResolvers;
 }
 
-export function IjeChat({ title, placeholder, width, height, resourceLinkResolvers }: IjeChatProps) {
-  const ref = useRef<(HTMLElement & { resourceLinkResolvers: ResourceLinkResolvers }) | null>(null);
+/** Ref handle for driving the underlying <ije-chat> element imperatively, e.g. loadHistory() to
+ *  restore a past conversation, or addEventListener('ije-entity-navigate', ...) for client-side
+ *  routing (see the package README's "Handling clicks in a single-page app"). */
+export type IjeChatHandle = IjeChatElement;
+
+export const IjeChat = forwardRef<IjeChatHandle, IjeChatProps>(function IjeChat(
+  { title, placeholder, width, height, resourceLinkResolvers },
+  forwardedRef
+) {
+  const ref = useRef<IjeChatElement | null>(null);
+  useImperativeHandle(forwardedRef, () => ref.current as IjeChatHandle, []);
 
   useEffect(() => {
     if (ref.current) {
@@ -31,4 +40,4 @@ export function IjeChat({ title, placeholder, width, height, resourceLinkResolve
       height={height}
     />
   );
-}
+});
