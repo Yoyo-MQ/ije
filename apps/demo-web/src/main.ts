@@ -1,6 +1,7 @@
 import { Ije } from '@yoyomq/ije-core';
-import type { IjeConversationSummary } from '@yoyomq/ije-core';
+import type { EntityReference, IjeConversationSummary } from '@yoyomq/ije-core';
 import '@yoyomq/ije-ui';
+import type { ResourceLinkResolvers } from '@yoyomq/ije-ui';
 import { tripData } from './data';
 
 // ─── DOM refs ────────────────────────────────────────────────────────────────
@@ -94,6 +95,19 @@ class Combobox {
   }
 
   getValue(): string | null { return this.selectedValue; }
+
+  /** Programmatically selects an item by value, same as picking it from the dropdown — no-ops if
+   *  the value isn't in the current item list. */
+  setValue(value: string) {
+    const item = this.items.find(i => i.value === value);
+    if (item) this.select(item);
+  }
+
+  /** Clears the current selection without notifying change handlers. */
+  clear() {
+    this.selectedValue = null;
+    this.inputEl.value = '';
+  }
 
   getSelectedItem(): ComboItem | null {
     return this.items.find(i => i.value === this.selectedValue) ?? null;
@@ -382,6 +396,37 @@ function loadTrips() {
 }
 
 tripLoadBtn.addEventListener('click', loadTrips);
+
+// ─── Entity references from AI Chat answers → real in-app navigation ──────────
+// devices and triggers both have somewhere to land (Live Tracking / Trip Explorer), so they get
+// real resolvers. trips and workflows are left out deliberately: this SDK has no per-trip lookup
+// (trips are only browsable through a trigger's trip-picker), and this demo has no workflows panel
+// at all — both fall back to <ije-chat>'s built-in popover instead of a dead link.
+(fleetChatEl as unknown as { resourceLinkResolvers: ResourceLinkResolvers }).resourceLinkResolvers = {
+  devices: '#device/{id}',
+  triggers: '#trigger/{id}',
+};
+
+fleetChatEl.addEventListener('ije-entity-navigate', (e) => {
+  const navigateEvent = e as CustomEvent<{ entity: EntityReference; href: string }>;
+  navigateEvent.preventDefault();
+  const { entity } = navigateEvent.detail;
+
+  if (entity.entity_type === 'devices') {
+    liveDeviceCombo.setValue(entity.id);
+    document.getElementById('live-tracking-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  if (entity.entity_type === 'triggers') {
+    tripDeviceCombo.clear();
+    refreshTriggers().then(() => {
+      triggerCombo.setValue(entity.id);
+      loadTrips();
+      document.getElementById('trip-explorer-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+});
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 

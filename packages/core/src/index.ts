@@ -6,6 +6,7 @@ import { IjeHttpClient } from './httpClient';
 export type {
   ChatChartSpec,
   ChatResponse,
+  EntityReference,
   IjeConversationSummary,
   IjeConversationsResponse,
   IjeConversationMessage,
