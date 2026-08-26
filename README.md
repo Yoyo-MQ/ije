@@ -241,10 +241,11 @@ back to the popover — never a broken link. Ije, not the LLM, owns this list; t
 Anthropic-side agent only ever returns entity references drawn from it, so a template
 here can't go stale from a model change.
 
-**Handling clicks in a single-page app.** A resolved link is a real `href` — right-click
-"open in new tab" works — but clicking it first dispatches a cancelable
-`ije-entity-navigate` `CustomEvent` (`detail: { entity, href }`) before falling back to
-a plain navigation. Call `preventDefault()` to take over with your own router instead:
+**Handling clicks in a single-page app.** A resolved entity mention is rendered as a
+clickable `<span>`, not a real `<a href>` — right-click "open in new tab" isn't
+available. Clicking it dispatches a cancelable `ije-entity-navigate` `CustomEvent`
+(`detail: { entity, href }`) before falling back to `window.location.href`. Call
+`preventDefault()` to take over with your own router instead:
 
 ```ts
 document.querySelector('ije-chat').addEventListener('ije-entity-navigate', (e) => {
@@ -307,7 +308,7 @@ Everything hangs off the `Ije` singleton from `@yoyomq/ije-core`.
 const res = await Ije.chat.ask('How many devices reported in the last hour?');
 console.log(res.answer);    // string
 console.log(res.chart);     // optional ChatChartSpec
-console.log(res.entityReferences);  // EntityReference[] — devices/triggers/trips the answer mentions,
+console.log(res.entity_references); // EntityReference[] — devices/triggers/trips the answer mentions,
                              // resolved to links by <ije-chat> if you're using the widget;
                              // resolve them yourself here if you're driving the chat UI by hand
 Ije.chat.resetSession();  // start a fresh conversation

@@ -21,7 +21,7 @@ function formatAnswer(text: string): string {
 function resolveEntityTemplate(template: string, entity: EntityReference): string {
   return template.replace(/\{(\w+)\}/g, (_match, field: string) => {
     const value = (entity as unknown as Record<string, unknown>)[field];
-    return value != null ? String(value) : '';
+    return value != null ? encodeURIComponent(String(value)) : '';
   });
 }
 
@@ -288,6 +288,8 @@ export class IjeChat extends HTMLElement {
   /** Entities for the currently-rendered messages, indexed to match each bubble's data-ije-entity-index. */
   private entitiesByMessage: EntityReference[][] = [];
   private popoverEl: HTMLDivElement | null = null;
+  private popoverDismissHandler: ((evt: MouseEvent) => void) | null = null;
+  private shellRendered = false;
 
   static get observedAttributes() {
     return ['title', 'placeholder', 'height'];
@@ -321,7 +323,13 @@ export class IjeChat extends HTMLElement {
       border:1px solid var(--yoyo-border,#e4e4e7);
       background:var(--yoyo-background,#fff);
     `;
+    if (this.shellRendered) return;
+    this.shellRendered = true;
     this._renderShell();
+  }
+
+  disconnectedCallback() {
+    this._dismissEntityPopover();
   }
 
   private _renderShell() {
@@ -522,7 +530,7 @@ export class IjeChat extends HTMLElement {
   /** Minimal fallback for an entity with no configured resolver — shows what the SDK already
    *  knows (type, label, id) rather than a dead link. Dismissed by any subsequent click. */
   private _showEntityPopover(anchor: HTMLElement, entity: EntityReference) {
-    this.popoverEl?.remove();
+    this._dismissEntityPopover();
 
     const popover = document.createElement('div');
     popover.style.cssText = `
@@ -547,11 +555,24 @@ export class IjeChat extends HTMLElement {
 
     const dismiss = (evt: MouseEvent) => {
       if (evt.target === anchor) return;
-      popover.remove();
-      document.removeEventListener('click', dismiss, true);
+      this._dismissEntityPopover();
     };
+    this.popoverDismissHandler = dismiss;
     // Capture phase, next tick — otherwise this same click immediately dismisses it.
-    setTimeout(() => document.addEventListener('click', dismiss, true), 0);
+    setTimeout(() => {
+      if (this.popoverDismissHandler === dismiss) document.addEventListener('click', dismiss, true);
+    }, 0);
+  }
+
+  /** Removes the current popover and its document listener, if any — called before showing a new
+   *  popover, on outside click, and on disconnect, so at most one listener is ever registered. */
+  private _dismissEntityPopover() {
+    if (this.popoverDismissHandler) {
+      document.removeEventListener('click', this.popoverDismissHandler, true);
+      this.popoverDismissHandler = null;
+    }
+    this.popoverEl?.remove();
+    this.popoverEl = null;
   }
 
   private _setLoading(loading: boolean) {
@@ -599,6 +620,7 @@ export class IjeChat extends HTMLElement {
 
   private _resetChat() {
     if (this.messagesEl) this.messagesEl.innerHTML = '';
+    this.entitiesByMessage = [];
     Ije.chat.resetSession();
     this._addMessage('assistant', 'New conversation started. What would you like to know?');
   }
@@ -619,6 +641,7 @@ export class IjeChat extends HTMLElement {
   ) {
     if (!this.messagesEl) return;
     this.messagesEl.innerHTML = '';
+    this.entitiesByMessage = [];
     for (const message of messages) {
       this._addMessage('user', message.question);
       if (message.answer) {

@@ -17,8 +17,8 @@ export function IjeChat({ title, placeholder, width, height, resourceLinkResolve
   const ref = useRef<(HTMLElement & { resourceLinkResolvers: ResourceLinkResolvers }) | null>(null);
 
   useEffect(() => {
-    if (ref.current && resourceLinkResolvers) {
-      ref.current.resourceLinkResolvers = resourceLinkResolvers;
+    if (ref.current) {
+      ref.current.resourceLinkResolvers = resourceLinkResolvers ?? {};
     }
   }, [resourceLinkResolvers]);
 

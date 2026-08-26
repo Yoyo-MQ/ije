@@ -17,13 +17,10 @@ export interface ChatChartSpec {
   datasets: Array<{ label: string; data: number[] }>;
 }
 
-export interface EntityReference {
-  entity_type: 'devices' | 'triggers' | 'trips' | 'workflows';
-  id: string;
-  label: string;
-  /** Required when entity_type is 'trips' — the id of the device the trip belongs to. */
-  device_id?: string;
-}
+/** A trip reference always carries device_id (the device it belongs to); other entity types don't have one. */
+export type EntityReference =
+  | { entity_type: 'devices' | 'triggers' | 'workflows'; id: string; label: string }
+  | { entity_type: 'trips'; id: string; label: string; device_id: string };
 
 export interface ChatResponse {
   session_id: string;
