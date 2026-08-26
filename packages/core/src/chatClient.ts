@@ -17,10 +17,16 @@ export interface ChatChartSpec {
   datasets: Array<{ label: string; data: number[] }>;
 }
 
+/** A trip reference always carries device_id (the device it belongs to); other entity types don't have one. */
+export type EntityReference =
+  | { entity_type: 'devices' | 'triggers' | 'workflows'; id: string; label: string }
+  | { entity_type: 'trips'; id: string; label: string; device_id: string };
+
 export interface ChatResponse {
   session_id: string;
   answer: string;
   chart?: ChatChartSpec;
+  entity_references?: EntityReference[];
 }
 
 /** One AI conversation session, as listed by IjeChatClient.listConversations(). */
@@ -42,6 +48,7 @@ export interface IjeConversationMessage {
   question: string;
   answer: string | null;
   chart?: ChatChartSpec;
+  entity_references?: EntityReference[];
   created_at: string;
   completed_at: string | null;
 }
