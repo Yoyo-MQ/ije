@@ -346,25 +346,49 @@ out-of-range payloads are dropped rather than rendered.
 
 ## Using with React
 
-The `@yoyomq/ije-react` wrappers aren't published yet, but the Web Components work in
-React as-is — just initialize once and use the tags as JSX:
+`@yoyomq/ije-react` publishes typed wrappers — `IjeProvider` once at the root, then the
+components as JSX:
 
 ```tsx
-import { useEffect } from 'react';
-import { Ije } from '@yoyomq/ije-core';
-import '@yoyomq/ije-ui';
+import { IjeProvider, IjeMapTracker } from '@yoyomq/ije-react';
 
 export function Dashboard({ apiKey }: { apiKey: string }) {
-  useEffect(() => { Ije.init({ apiKey }); }, [apiKey]);
-
-  // For static-data widgets, set the .data property via a ref since
-  // custom-element properties aren't plain React props.
-  return <ije-map-tracker device-id="truck-001" title="Vehicle Location" />;
+  return (
+    <IjeProvider config={{ apiKey }}>
+      <IjeMapTracker deviceId="truck-001" title="Vehicle Location" />
+    </IjeProvider>
+  );
 }
 ```
 
-You may need to declare the custom element tags in your JSX intrinsic elements for
-TypeScript. (First-class typed React wrappers are planned.)
+`IjeChat` forwards a ref to the underlying `<ije-chat>` element for the cases a prop
+can't cover — driving it from outside instead of through its own composer:
+
+```tsx
+import { useRef } from 'react';
+import { IjeChat, type IjeChatHandle } from '@yoyomq/ije-react';
+
+function FleetAssistantPanel() {
+  const chatRef = useRef<IjeChatHandle>(null);
+
+  // Ask on the user's behalf, e.g. a contextual "Ask about this" button elsewhere on the page.
+  chatRef.current?.ask('Why is TRK-1150 idle?');
+
+  // Restore a past conversation (see "Conversation history" above) and its entity links.
+  const { messages } = await Ije.chat.getConversation(sessionId);
+  Ije.chat.resumeSession(sessionId);
+  chatRef.current?.loadHistory(messages);
+
+  // Or listen for the same ije-entity-navigate event documented above.
+  chatRef.current?.addEventListener('ije-entity-navigate', (e) => { /* ... */ });
+
+  return <IjeChat ref={chatRef} />;
+}
+```
+
+If you're not using the React wrappers, the Web Components work in plain React too —
+initialize `Ije` once and use the tags as JSX, declaring them in your JSX intrinsic
+elements for TypeScript.
 
 ---
 
