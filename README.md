@@ -116,6 +116,10 @@ especially for dark mode:
 | `--yoyo-background` | Widget background |
 | `--yoyo-card-bg` | Headers, chat bubbles, panels |
 | `--yoyo-border` | Borders/dividers |
+| `--yoyo-primary` | Accent color for `<ije-chat>` entity-mention links (falls back to `theme.primaryColor`) |
+| `--yoyo-tag-bg` | Background for small inline tags/badges (e.g. chart help hints) |
+| `--yoyo-grid-stroke` | Chart gridline color (`<ije-telemetry-chart>`) |
+| `--yoyo-axis-stroke` | Chart axis line/label color (`<ije-telemetry-chart>`) |
 
 ```css
 :root {
@@ -125,8 +129,17 @@ especially for dark mode:
   --yoyo-background: #ffffff;
   --yoyo-card-bg: #f4f4f5;
   --yoyo-border: #e4e4e7;
+  --yoyo-primary: #8a2be2;
+  --yoyo-tag-bg: #eeeeee;
+  --yoyo-grid-stroke: rgba(0, 0, 0, 0.08);
+  --yoyo-axis-stroke: #999999;
 }
 ```
+
+If your app already has its own light/dark design tokens, map these to them directly
+(e.g. `--yoyo-foreground: hsl(var(--foreground))` for a shadcn-style HSL-triple token) —
+one definition then follows your existing theme automatically, no separate dark-mode
+block needed.
 
 ---
 
