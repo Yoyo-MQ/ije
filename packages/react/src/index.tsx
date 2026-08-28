@@ -11,7 +11,7 @@ export { IjeTelemetryChart } from './TelemetryChart';
 export type { IjeTelemetryChartProps } from './TelemetryChart';
 
 export { IjeChat } from './Chat';
-export type { IjeChatProps } from './Chat';
+export type { IjeChatProps, IjeChatHandle } from './Chat';
 
 export { IjeAggregateStat } from './AggregateStat';
 export type { IjeAggregateStatProps } from './AggregateStat';

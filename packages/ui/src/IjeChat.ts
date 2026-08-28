@@ -594,18 +594,18 @@ export class IjeChat extends HTMLElement {
     }
   }
 
-  private async _handleSend() {
-    if (this.isLoading || !this.inputEl) return;
-    const question = this.inputEl.value.trim();
-    if (!question) return;
+  /** Asks the assistant a question programmatically, exactly as _handleSend does for typed input -
+   *  appends the user/assistant bubbles and manages loading state. No-ops while already loading or
+   *  given only whitespace. Useful for a contextual entry point that already knows what to ask. */
+  async ask(question: string): Promise<void> {
+    const trimmedQuestion = question.trim();
+    if (this.isLoading || !trimmedQuestion) return;
 
-    this.inputEl.value = '';
-    this.inputEl.style.height = 'auto';
-    this._addMessage('user', question);
+    this._addMessage('user', trimmedQuestion);
     this._setLoading(true);
 
     try {
-      const response = await Ije.chat.ask(question);
+      const response = await Ije.chat.ask(trimmedQuestion);
       this._addMessage('assistant', response.answer, response.chart, response.entity_references);
     } catch (err) {
       console.error('[Ije] Chat error:', err);
@@ -618,6 +618,16 @@ export class IjeChat extends HTMLElement {
       this._setLoading(false);
       this.inputEl?.focus();
     }
+  }
+
+  private _handleSend() {
+    if (this.isLoading || !this.inputEl) return;
+    const question = this.inputEl.value.trim();
+    if (!question) return;
+
+    this.inputEl.value = '';
+    this.inputEl.style.height = 'auto';
+    void this.ask(question);
   }
 
   private _resetChat() {
