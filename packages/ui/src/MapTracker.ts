@@ -7,7 +7,15 @@ export class IjeMapTracker extends HTMLElement {
   // the live-updated GeoJSON trail bounded.
   private static readonly MAX_TRAIL_POINTS = 1000;
 
+  // Current-position halo pulse: same 1.5s cadence as the .ije-live-dot pulse used on the
+  // LIVE badge (injectLivePulseStyle, below), applied to a MapLibre paint property instead
+  // of a CSS animation since a canvas-rendered circle layer can't be animated with CSS.
+  private static readonly CURRENT_MARKER_PULSE_PERIOD_MS = 1500;
+  private static readonly CURRENT_MARKER_PULSE_MIN_OPACITY = 0.15;
+  private static readonly CURRENT_MARKER_PULSE_MAX_OPACITY = 0.4;
+
   private map: maplibregl.Map | null = null;
+  private currentMarkerPulseFrameId: number | null = null;
   private deviceId: string | null = null;
   private liveTopic: string | null = null;
   private trailCoordinates: [number, number][] = [];
@@ -119,8 +127,8 @@ export class IjeMapTracker extends HTMLElement {
             },
             paint: {
               'line-color': Ije.config?.theme?.primaryColor || '#8A2BE2',
-              'line-width': 4,
-              'line-opacity': 0.6
+              'line-width': 5,
+              'line-opacity': 0.85
             }
           },
           {
@@ -133,6 +141,22 @@ export class IjeMapTracker extends HTMLElement {
               'circle-color': '#22c55e',
               'circle-stroke-width': 2,
               'circle-stroke-color': '#ffffff'
+            }
+          },
+          // Sits below device-current-marker in the layer stack (drawn first, so the solid
+          // dot renders on top) and its opacity is animated by startCurrentMarkerPulse() to
+          // echo the ije-live-dot pulse already used on the LIVE badge, giving the live
+          // position a "this is moving right now" glow the static start marker doesn't have.
+          {
+            id: 'device-current-marker-halo',
+            type: 'circle',
+            source: 'device-location',
+            filter: ['==', 'markerType', 'current'],
+            paint: {
+              'circle-radius': 15,
+              'circle-color': Ije.config?.theme?.primaryColor || '#8A2BE2',
+              'circle-opacity': IjeMapTracker.CURRENT_MARKER_PULSE_MIN_OPACITY,
+              'circle-stroke-width': 0
             }
           },
           {
@@ -154,7 +178,12 @@ export class IjeMapTracker extends HTMLElement {
     });
 
     // Register click-to-popup on the current-position marker once the style loads.
-    this.map.on('load', () => this.setupMarkerClickHandler());
+    this.map.on('load', () => {
+      this.setupMarkerClickHandler();
+      // Only live mode has a genuinely "live" current position — trip-picker's "current"
+      // marker is a trip's static end point, so pulsing it would misleadingly suggest motion.
+      if (!this.isTripPickerMode()) this.startCurrentMarkerPulse();
+    });
 
     // Trip-picker mode replays historical trips and must not also follow the
     // live MQTT feed; the two modes are mutually exclusive.
@@ -179,8 +208,40 @@ export class IjeMapTracker extends HTMLElement {
     this.resizeObserver?.disconnect();
     if (this.liveTopic) Ije.mqtt.unsubscribe(this.liveTopic, this.handleLocationUpdate);
     document.removeEventListener('ije-context-ready', this.handleContextReady as EventListener);
+    this.stopCurrentMarkerPulse();
     this.markerPopup?.remove();
     this.map?.remove();
+  }
+
+  // ─── Current-marker pulse ───────────────────────────────────────────────────
+
+  private startCurrentMarkerPulse() {
+    if (this.currentMarkerPulseFrameId !== null) return; // already running
+
+    const { CURRENT_MARKER_PULSE_PERIOD_MS, CURRENT_MARKER_PULSE_MIN_OPACITY, CURRENT_MARKER_PULSE_MAX_OPACITY } =
+      IjeMapTracker;
+    const opacityRange = CURRENT_MARKER_PULSE_MAX_OPACITY - CURRENT_MARKER_PULSE_MIN_OPACITY;
+
+    const step = (now: number) => {
+      if (!this.map || !this.map.getLayer('device-current-marker-halo')) {
+        this.currentMarkerPulseFrameId = null;
+        return;
+      }
+      // A cosine wave over the period reproduces ije-live-pulse's 0%→1, 50%→0.3, 100%→1
+      // keyframes (a smooth up-down oscillation) without needing a fixed start timestamp.
+      const phase = (Math.cos((now / CURRENT_MARKER_PULSE_PERIOD_MS) * Math.PI * 2) + 1) / 2;
+      const opacity = CURRENT_MARKER_PULSE_MIN_OPACITY + phase * opacityRange;
+      this.map.setPaintProperty('device-current-marker-halo', 'circle-opacity', opacity);
+      this.currentMarkerPulseFrameId = requestAnimationFrame(step);
+    };
+    this.currentMarkerPulseFrameId = requestAnimationFrame(step);
+  }
+
+  private stopCurrentMarkerPulse() {
+    if (this.currentMarkerPulseFrameId !== null) {
+      cancelAnimationFrame(this.currentMarkerPulseFrameId);
+      this.currentMarkerPulseFrameId = null;
+    }
   }
 
   private handleContextReady = (e: Event) => {
@@ -420,7 +481,7 @@ export class IjeMapTracker extends HTMLElement {
 
   private buildMarkerPopupElement(lat: number, lng: number, payload: Record<string, any>): HTMLDivElement {
     const container = document.createElement('div');
-    container.style.cssText = 'font-family:var(--yoyo-font,sans-serif);font-size:12px;min-width:150px;color:#111;';
+    container.style.cssText = 'font-family:var(--yoyo-font,sans-serif);font-size:12px;min-width:150px;color:var(--yoyo-foreground,#111);';
 
     const titleElement = document.createElement('div');
     titleElement.style.cssText = 'font-weight:700;font-size:13px;margin-bottom:8px;';
@@ -462,7 +523,7 @@ export class IjeMapTracker extends HTMLElement {
     for (const [label, value] of infoRows) {
       const infoRow = document.createElement('div');
       infoRow.style.cssText = 'display:flex;justify-content:space-between;gap:12px;';
-      infoRow.innerHTML = `<span style="color:#888;">${label}</span><span style="font-weight:600;">${value}</span>`;
+      infoRow.innerHTML = `<span style="color:var(--yoyo-muted,#888);">${label}</span><span style="font-weight:600;">${value}</span>`;
       infoTable.appendChild(infoRow);
     }
     container.appendChild(infoTable);
@@ -598,8 +659,8 @@ export class IjeMapTracker extends HTMLElement {
     const primary = Ije.config?.theme?.primaryColor || '#8A2BE2';
     const inputStyle = [
       'flex:1', 'font-size:11px', 'padding:4px 6px',
-      'border:1px solid #ddd', 'border-radius:6px',
-      'outline:none', 'color:#333', 'background:#fff',
+      'border:1px solid var(--yoyo-border,#ddd)', 'border-radius:6px',
+      'outline:none', 'color:var(--yoyo-foreground,#333)', 'background:var(--yoyo-background,#fff)',
       'min-width:0',
     ].join(';');
 
@@ -607,30 +668,34 @@ export class IjeMapTracker extends HTMLElement {
     el.style.cssText = [
       'position:absolute', 'left:12px', 'bottom:12px', 'z-index:10',
       'width:290px', 'padding:10px 14px', 'border-radius:10px',
-      'background:rgba(255,255,255,0.97)',
+      // color-mix keeps the near-opaque "floating glass panel" look of the original
+      // rgba(255,255,255,0.97) in both themes without needing a dedicated overlay
+      // CSS variable — it tints whatever --yoyo-card-bg resolves to.
+      'background:color-mix(in srgb, var(--yoyo-card-bg, #fff) 97%, transparent)',
       'box-shadow:0 2px 12px rgba(0,0,0,0.25)',
       'font-family:sans-serif',
+      'color:var(--yoyo-foreground,#111)',
     ].join(';');
     el.innerHTML = `
       <div style="margin-bottom:8px;">
-        <div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Date range</div>
+        <div style="font-size:10px;font-weight:600;color:var(--yoyo-muted,#888);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Date range</div>
         <div style="display:flex;align-items:center;gap:4px;">
           <input class="ije-tp-from" type="date" style="${inputStyle}">
-          <span style="font-size:11px;color:#aaa;flex-shrink:0;">–</span>
+          <span style="font-size:11px;color:var(--yoyo-muted,#aaa);flex-shrink:0;">–</span>
           <input class="ije-tp-to" type="date" style="${inputStyle}">
           <button class="ije-tp-go" style="padding:4px 10px;font-size:11px;font-weight:600;border:none;border-radius:6px;background:${primary};color:#fff;cursor:pointer;flex-shrink:0;">Go</button>
         </div>
       </div>
-      <div style="border-top:1px solid #eee;margin:0 -14px;padding:8px 14px 0;">
+      <div style="border-top:1px solid var(--yoyo-border,#eee);margin:0 -14px;padding:8px 14px 0;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <div style="min-width:0;">
-            <div class="ije-tp-date" style="font-weight:600;font-size:13px;color:#111;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
-            <div class="ije-tp-trigger" style="font-size:11px;color:#666;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+            <div class="ije-tp-date" style="font-weight:600;font-size:13px;color:var(--yoyo-foreground,#111);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+            <div class="ije-tp-trigger" style="font-size:11px;color:var(--yoyo-muted,#666);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
           </div>
           <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;">
             <button class="ije-tp-prev" aria-label="Previous trip"
               style="border:none;background:none;cursor:pointer;font-size:22px;line-height:1;color:${primary};padding:2px 6px;">‹</button>
-            <span class="ije-tp-count" style="font-size:12px;color:#666;min-width:44px;text-align:center;"></span>
+            <span class="ije-tp-count" style="font-size:12px;color:var(--yoyo-muted,#666);min-width:44px;text-align:center;"></span>
             <button class="ije-tp-next" aria-label="Next trip"
               style="border:none;background:none;cursor:pointer;font-size:22px;line-height:1;color:${primary};padding:2px 6px;">›</button>
           </div>
@@ -699,13 +764,13 @@ function injectMaplibrePopupStyle() {
     .maplibregl-popup-anchor-left { flex-direction:row-reverse; align-items:center; }
     .maplibregl-popup-anchor-right { flex-direction:row; align-items:center; }
     .maplibregl-popup-tip { width:0; height:0; border:10px solid transparent; pointer-events:none; }
-    .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color:#fff; border-bottom:none; }
-    .maplibregl-popup-anchor-top .maplibregl-popup-tip,.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color:#fff; border-top:none; }
-    .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color:#fff; border-left:none; }
-    .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color:#fff; border-right:none; }
-    .maplibregl-popup-content { position:relative; pointer-events:auto; background:#fff; border-radius:8px; padding:12px 14px 10px; box-shadow:0 2px 14px rgba(0,0,0,0.18); }
-    .maplibregl-popup-close-button { position:absolute; right:6px; top:4px; cursor:pointer; font-size:18px; background:none; border:none; color:#888; line-height:1; padding:2px 4px; }
-    .maplibregl-popup-close-button:hover { color:#333; }
+    .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color:var(--yoyo-card-bg,#fff); border-bottom:none; }
+    .maplibregl-popup-anchor-top .maplibregl-popup-tip,.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color:var(--yoyo-card-bg,#fff); border-top:none; }
+    .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color:var(--yoyo-card-bg,#fff); border-left:none; }
+    .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color:var(--yoyo-card-bg,#fff); border-right:none; }
+    .maplibregl-popup-content { position:relative; pointer-events:auto; background:var(--yoyo-card-bg,#fff); color:var(--yoyo-foreground,#111); border-radius:8px; padding:12px 14px 10px; box-shadow:0 2px 14px rgba(0,0,0,0.18); }
+    .maplibregl-popup-close-button { position:absolute; right:6px; top:4px; cursor:pointer; font-size:18px; background:none; border:none; color:var(--yoyo-muted,#888); line-height:1; padding:2px 4px; }
+    .maplibregl-popup-close-button:hover { color:var(--yoyo-foreground,#333); }
   `;
   document.head.appendChild(styleElement);
 }
