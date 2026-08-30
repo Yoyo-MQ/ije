@@ -607,6 +607,12 @@ export class IjeChat extends HTMLElement {
     try {
       const response = await Ije.chat.ask(trimmedQuestion);
       this._addMessage('assistant', response.answer, response.chart, response.entity_references);
+      this.dispatchEvent(
+        new CustomEvent('ije-conversation-updated', {
+          detail: { sessionId: response.session_id },
+          bubbles: true,
+        }),
+      );
     } catch (err) {
       console.error('[Ije] Chat error:', err);
       if (err instanceof AiCreditsExhaustedError) {

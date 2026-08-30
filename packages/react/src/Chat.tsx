@@ -14,8 +14,9 @@ export interface IjeChatProps {
 }
 
 /** Ref handle for driving the underlying <ije-chat> element imperatively, e.g. loadHistory() to
- *  restore a past conversation, or addEventListener('ije-entity-navigate', ...) for client-side
- *  routing (see the package README's "Handling clicks in a single-page app"). */
+ *  restore a past conversation, addEventListener('ije-entity-navigate', ...) for client-side
+ *  routing, or addEventListener('ije-conversation-updated', ...) to know when to refetch a
+ *  conversation list (see the package README's "Handling clicks in a single-page app"). */
 export type IjeChatHandle = IjeChatElement;
 
 export const IjeChat = forwardRef<IjeChatHandle, IjeChatProps>(function IjeChat(

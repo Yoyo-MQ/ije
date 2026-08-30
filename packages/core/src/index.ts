@@ -24,6 +24,7 @@ export type {
   IjeDevicesResponse,
   IjeAggregatedEventsResponse,
   IjeDeviceDataResponse,
+  IjeTripTelemetryPoint,
   ListAggregatedEventsParams,
   GetDeviceDataParams,
 } from './tripsClient';
