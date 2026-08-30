@@ -19,5 +19,5 @@ export type { IjeAggregateStatProps } from './AggregateStat';
 export { IjeBarChart } from './BarChart';
 export type { IjeBarChartProps } from './BarChart';
 
-export type { SdkConfig, IjeTripTelemetryPoint } from '@yoyomq/ije-core';
+export type { SdkConfig, IjeTelemetryPoint } from '@yoyomq/ije-core';
 export type { AggregateData, AggregateMetric, BarChartData } from '@yoyomq/ije-ui';
