@@ -14,6 +14,12 @@ export interface IjeDeviceTrackerViewProps {
   eventPicker?: boolean;
   triggerId?: number;
   triggerName?: string;
+  /** History mode: a device's own telemetry with no trigger involved -- the widget fetches and
+   *  plots it itself. `startsAt`/`endsAt` (Unix seconds) are optional bounds within this mode:
+   *  both given walks that window chronologically; omitted, it's the device's recent activity
+   *  (most recent points). Mutually exclusive with `eventPicker` (which takes priority if both
+   *  are set) and with live mode (neither `eventPicker` nor `history` set). */
+  history?: boolean;
   startsAt?: number;
   endsAt?: number;
   /** Hides event-picker mode's built-in "Date range" inputs -- for hosts that drive the window
@@ -44,6 +50,7 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
       eventPicker,
       triggerId,
       triggerName,
+      history,
       startsAt,
       endsAt,
       hideDateRangePicker,
@@ -67,6 +74,7 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
         event-picker={eventPicker ? '' : undefined}
         trigger-id={triggerId}
         trigger-name={triggerName}
+        history={history ? '' : undefined}
         starts-at={startsAt}
         ends-at={endsAt}
         hide-date-range-picker={hideDateRangePicker ? '' : undefined}
