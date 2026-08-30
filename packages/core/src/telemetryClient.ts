@@ -150,37 +150,67 @@ export class IjeTelemetryClient {
   }
 
   /**
-   * Fetches all telemetry for a window by paging through device_data and returns
-   * chronological [lng, lat] pairs ready for maplibre.
-   * startsAt and endsAt are Unix milliseconds.
+   * Fetches telemetry for a window (or, with no window, recent activity -- see getTelemetry) and
+   * returns chronological [lng, lat] pairs ready for maplibre.
+   * startsAt and endsAt, when given, are Unix milliseconds.
    */
-  async getPath(params: { deviceIds: number[]; startsAt: number; endsAt: number }): Promise<[number, number][]> {
+  async getPath(params: { deviceIds: number[]; startsAt?: number; endsAt?: number; limit?: number }): Promise<[number, number][]> {
     const telemetry = await this.getTelemetry(params);
     return telemetry.map((point): [number, number] => [point.lng, point.lat]);
   }
 
   /**
-   * Fetches all telemetry for a window by paging through device_data, keeping timestamp and
-   * speed alongside each coordinate (for a Timeline Bar's scrubber labels) rather than just the
-   * bare path getPath returns. startsAt and endsAt are Unix milliseconds.
+   * Fetches telemetry, keeping timestamp and speed alongside each coordinate (for a Timeline
+   * Bar's scrubber labels) rather than just the bare path getPath returns. Not tied to any event
+   * or trigger -- callers pass whatever startsAt/endsAt they want (an event's
+   * msg_start_time/msg_end_time, or an arbitrary date-range picked in a host UI), or omit either
+   * one for "recent activity" (see below). startsAt/endsAt, when given, are Unix milliseconds.
+   *
+   * - **Both startsAt and endsAt given**: walks forward chronologically from startsAt, page by
+   *   page, until the range is exhausted or MAX_PAGES is hit -- matches how a playback session is
+   *   actually experienced (chronologically, not most-recent-first). MAX_PAGES is a safety
+   *   ceiling on a pathologically dense/long range, not a design target.
+   * - **Either one missing**: no window to walk -- returns the device's most recent `limit`
+   *   points (default 500), chronological.
    */
-  async getTelemetry(params: { deviceIds: number[]; startsAt: number; endsAt: number }): Promise<IjeTelemetryPoint[]> {
+  async getTelemetry(params: { deviceIds: number[]; startsAt?: number; endsAt?: number; limit?: number }): Promise<IjeTelemetryPoint[]> {
     const debug = this.config?.debug;
     const pageSize = 500;
+    const maxPages = 20;
     const points: IjeTelemetryPoint[] = [];
-    const partialQueryExpression = `timestamp >= ${params.startsAt} AND timestamp <= ${params.endsAt}`;
+
+    if (params.startsAt == null || params.endsAt == null) {
+      const page = await this.getDeviceData({
+        deviceIds: params.deviceIds,
+        partialQueryExpression: 'lat != 0 AND lng != 0',
+        order: 'DESC',
+        limit: params.limit ?? pageSize,
+        offset: 0,
+      });
+      for (const row of page.data) {
+        const point = extractTelemetryPoint(row);
+        if (point) points.push(point);
+      }
+      points.reverse(); // DESC comes back newest-first; callers expect chronological order.
+      if (debug) {
+        console.log(`[Yoyo ije][Telemetry] recent-activity fetch → ${points.length} valid points`);
+      }
+      return points;
+    }
+
+    const partialQueryExpression = `timestamp >= ${params.startsAt} AND timestamp <= ${params.endsAt} AND lat != 0 AND lng != 0`;
     let totalRows = 0;
 
-    for (let offset = 0; ; offset += pageSize) {
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex++) {
       const page = await this.getDeviceData({
         deviceIds: params.deviceIds,
         partialQueryExpression,
         order: 'ASC',
         limit: pageSize,
-        offset,
+        offset: pageIndex * pageSize,
       });
       totalRows += page.data.length;
-      if (debug && offset === 0 && page.data.length > 0) {
+      if (debug && pageIndex === 0 && page.data.length > 0) {
         console.log('[Yoyo ije][Telemetry] first row data sample:', page.data[0].data);
       }
       for (const row of page.data) {

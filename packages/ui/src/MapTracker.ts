@@ -43,13 +43,17 @@ export class IjeMapTracker extends HTMLElement {
   private events: IjeAggregatedEvent[] = [];
   private eventIndex = 0;
   private triggerName = '';
-  private eventLoadToken = 0; // guards against a slow event load overwriting a newer one
   private pickerLoading = false;
   private windowStartsAt: number | undefined = undefined; // Unix seconds, set by date picker
   private windowEndsAt: number | undefined = undefined;
 
-  // Current event's telemetry (lng/lat/time/speed per point), driven by an external Timeline
-  // Bar via setPointIndex() -- see the "Timeline scrubbing" section below.
+  // Guards an in-flight telemetry load (event-picker's plotCurrentEvent or history mode's
+  // initHistoryMode) against a slower earlier load overwriting a newer one.
+  private telemetryLoadToken = 0;
+
+  // Currently plotted window's telemetry (lng/lat/time/speed per point) -- populated by
+  // event-picker mode (one trigger event) or history mode (a plain starts-at/ends-at window).
+  // Driven by an external Timeline Bar via setPointIndex() -- see "Timeline scrubbing" below.
   private telemetry: IjeTelemetryPoint[] = [];
 
   static get observedAttributes() {
@@ -209,15 +213,18 @@ export class IjeMapTracker extends HTMLElement {
     this.map.on('load', () => {
       this.applyMarkerStyle();
       this.setupMarkerClickHandler();
-      // Only live mode has a genuinely "live" current position — event-picker's "current"
-      // marker is a static window end point, so pulsing it would misleadingly suggest motion.
-      if (!this.isEventPickerMode()) this.startCurrentMarkerPulse();
+      // Only live mode has a genuinely "live" current position — event-picker/history mode's
+      // "current" marker is a static window end point, so pulsing it would misleadingly suggest
+      // motion.
+      if (!this.isEventPickerMode() && !this.isHistoryMode()) this.startCurrentMarkerPulse();
     });
 
-    // Event-picker mode replays historical events and must not also follow the
-    // live MQTT feed; the two modes are mutually exclusive.
+    // Live, event-picker, and history are mutually exclusive: event-picker/history replay a
+    // static, already-recorded window and must not also follow the live MQTT feed.
     if (this.isEventPickerMode()) {
       void this.initEventPicker();
+    } else if (this.isHistoryMode()) {
+      void this.initHistoryMode();
     } else if (this.deviceId) {
       this.renderTelemetryBar();
       this.renderLiveBadge();
@@ -575,7 +582,7 @@ export class IjeMapTracker extends HTMLElement {
     titleElement.textContent = `Device ${this.deviceId}`;
     container.appendChild(titleElement);
 
-    if (!this.isEventPickerMode()) {
+    if (!this.isEventPickerMode() && !this.isHistoryMode()) {
       const liveStatusRow = document.createElement('div');
       liveStatusRow.style.cssText = 'display:flex;align-items:center;gap:5px;margin-bottom:8px;';
       liveStatusRow.innerHTML = `<span class="ije-live-dot" style="flex-shrink:0;"></span><span style="color:#22c55e;font-weight:600;font-size:11px;">LIVE</span>`;
@@ -623,8 +630,20 @@ export class IjeMapTracker extends HTMLElement {
     return this.hasAttribute('event-picker') && !!this.getAttribute('trigger-id');
   }
 
+  // ─── History mode ───────────────────────────────────────────────────────────
+  // Opt-in via the `history` attribute: a device's own telemetry with no trigger involved --
+  // e.g. a host's own date-range picker showing "whatever we have for this device", not tied to
+  // any event. starts-at/ends-at are both optional within this mode: given, they bound the
+  // window (walked chronologically); omitted, it's "recent activity" (most recent points, see
+  // getTelemetry). Mutually exclusive with event-picker mode (which takes priority if both are
+  // set) and with live mode (a bare device-id with neither `event-picker` nor `history` set).
+
+  private isHistoryMode(): boolean {
+    return !this.isEventPickerMode() && this.hasAttribute('history');
+  }
+
   // Opt-in for hosts that drive the window from their own UI (e.g. yoyo-frontend's
-  // playback range control) and don't want the picker's built-in date inputs duplicating it.
+  // playback range control) and don't want event-picker's built-in date inputs duplicating it.
   // The prev/next/count event-navigation row stays -- only the "Date range" inputs are hidden.
   private isDateRangePickerHidden(): boolean {
     return this.hasAttribute('hide-date-range-picker');
@@ -639,6 +658,8 @@ export class IjeMapTracker extends HTMLElement {
       .filter((value) => Number.isFinite(value) && value > 0);
   }
 
+  // Unix seconds -- matches listAggregatedEvents' convention. History mode converts to
+  // milliseconds itself before calling getTelemetry (see initHistoryMode).
   private getWindow(): { startsAt?: number; endsAt?: number } {
     if (this.windowStartsAt !== undefined || this.windowEndsAt !== undefined) {
       return { startsAt: this.windowStartsAt, endsAt: this.windowEndsAt };
@@ -715,7 +736,7 @@ export class IjeMapTracker extends HTMLElement {
 
     const startsAt = new Date(event.msg_start_time).getTime();
     const endsAt = new Date(event.msg_end_time).getTime();
-    const token = ++this.eventLoadToken;
+    const token = ++this.telemetryLoadToken;
 
     let telemetry: IjeTelemetryPoint[] = [];
     try {
@@ -724,13 +745,48 @@ export class IjeMapTracker extends HTMLElement {
       console.error('[Yoyo ije] Failed to load event telemetry', err);
       return;
     }
-    if (token !== this.eventLoadToken) return; // a newer step superseded this load
+    if (token !== this.telemetryLoadToken) return; // a newer step superseded this load
 
     this.telemetry = telemetry;
     this.renderPath(telemetry.map((point) => [point.lng, point.lat]));
     this.updatePickerOverlay();
     this.dispatchEvent(new CustomEvent('ije-telemetry-changed', {
       detail: { points: telemetry, event },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  /** Fetches and plots a device's telemetry with no trigger involved -- the widget owns the
+   *  fetch itself (Ije.telemetry.getTelemetry), same as event-picker mode does for a resolved
+   *  event; the host only ever passes props/attributes, never raw points. starts-at/ends-at are
+   *  optional here: given, they bound the window; omitted, getTelemetry falls back to recent
+   *  activity. */
+  private async initHistoryMode() {
+    const deviceIds = this.getDeviceIds();
+    if (!deviceIds.length) return;
+    const { startsAt, endsAt } = this.getWindow(); // Unix seconds, either/both may be undefined
+
+    this.telemetry = [];
+    const token = ++this.telemetryLoadToken;
+
+    let telemetry: IjeTelemetryPoint[] = [];
+    try {
+      telemetry = await Ije.telemetry.getTelemetry({
+        deviceIds,
+        startsAt: startsAt != null ? startsAt * 1000 : undefined,
+        endsAt: endsAt != null ? endsAt * 1000 : undefined,
+      });
+    } catch (err) {
+      console.error('[Yoyo ije] Failed to load telemetry', err);
+      return;
+    }
+    if (token !== this.telemetryLoadToken) return; // a newer window superseded this load
+
+    this.telemetry = telemetry;
+    this.renderPath(telemetry.map((point) => [point.lng, point.lat]));
+    this.dispatchEvent(new CustomEvent('ije-telemetry-changed', {
+      detail: { points: telemetry },
       bubbles: true,
       composed: true,
     }));
