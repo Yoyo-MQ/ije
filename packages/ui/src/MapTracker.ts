@@ -1,9 +1,9 @@
 import maplibregl from 'maplibre-gl';
-import { Ije, type IjeAggregatedEvent, type IjeTripTelemetryPoint } from '@yoyomq/ije-core';
+import { Ije, type IjeAggregatedEvent, type IjeTelemetryPoint } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 
 export class IjeMapTracker extends HTMLElement {
-  // Comfortably covers a multi-hour trip at typical device send intervals (5-30s) while keeping
+  // Comfortably covers a multi-hour live session at typical device send intervals (5-30s) while keeping
   // the live-updated GeoJSON trail bounded.
   private static readonly MAX_TRAIL_POINTS = 1000;
 
@@ -25,9 +25,9 @@ export class IjeMapTracker extends HTMLElement {
   private deviceId: string | null = null;
   private liveTopic: string | null = null;
   private trailCoordinates: [number, number][] = [];
-  // The trail's own [0] is trimmed as MAX_TRAIL_POINTS is exceeded, so the "start of trip"
+  // The trail's own [0] is trimmed as MAX_TRAIL_POINTS is exceeded, so the "start of this live
   // marker needs its own immutable anchor rather than reading trailCoordinates[0].
-  private tripStartCoordinate: [number, number] | null = null;
+  private liveTrailStartCoordinate: [number, number] | null = null;
   private lastPayload: Record<string, any> | null = null;
   private markerPopup: maplibregl.Popup | null = null;
 
@@ -35,21 +35,22 @@ export class IjeMapTracker extends HTMLElement {
   private telemetryBar: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
-  // Trip-picker mode (opt-in via the `trip-picker` attribute + `trigger-id`).
+  // Event-picker mode (opt-in via the `event-picker` attribute + `trigger-id`): steps through one
+  // trigger's aggregated events one at a time, with its own prev/next overlay.
   private mapWrapper: HTMLDivElement | null = null;
   private pickerOverlay: HTMLDivElement | null = null;
   private pickerBar: HTMLDivElement | null = null;
-  private trips: IjeAggregatedEvent[] = [];
-  private tripIndex = 0;
+  private events: IjeAggregatedEvent[] = [];
+  private eventIndex = 0;
   private triggerName = '';
-  private tripLoadToken = 0; // guards against a slow trip load overwriting a newer one
+  private eventLoadToken = 0; // guards against a slow event load overwriting a newer one
   private pickerLoading = false;
   private windowStartsAt: number | undefined = undefined; // Unix seconds, set by date picker
   private windowEndsAt: number | undefined = undefined;
 
-  // Current trip's telemetry (lng/lat/time/speed per point), driven by an external Timeline
+  // Current event's telemetry (lng/lat/time/speed per point), driven by an external Timeline
   // Bar via setPointIndex() -- see the "Timeline scrubbing" section below.
-  private telemetry: IjeTripTelemetryPoint[] = [];
+  private telemetry: IjeTelemetryPoint[] = [];
 
   static get observedAttributes() {
     return ['device-id', 'title', 'help-message', 'marker-shape', 'marker-size', 'marker-color'];
@@ -208,15 +209,15 @@ export class IjeMapTracker extends HTMLElement {
     this.map.on('load', () => {
       this.applyMarkerStyle();
       this.setupMarkerClickHandler();
-      // Only live mode has a genuinely "live" current position — trip-picker's "current"
-      // marker is a trip's static end point, so pulsing it would misleadingly suggest motion.
-      if (!this.isTripPickerMode()) this.startCurrentMarkerPulse();
+      // Only live mode has a genuinely "live" current position — event-picker's "current"
+      // marker is a static window end point, so pulsing it would misleadingly suggest motion.
+      if (!this.isEventPickerMode()) this.startCurrentMarkerPulse();
     });
 
-    // Trip-picker mode replays historical trips and must not also follow the
+    // Event-picker mode replays historical events and must not also follow the
     // live MQTT feed; the two modes are mutually exclusive.
-    if (this.isTripPickerMode()) {
-      void this.initTripPicker();
+    if (this.isEventPickerMode()) {
+      void this.initEventPicker();
     } else if (this.deviceId) {
       this.renderTelemetryBar();
       this.renderLiveBadge();
@@ -347,14 +348,14 @@ export class IjeMapTracker extends HTMLElement {
     if (this.trailCoordinates.length > 0) {
       const last = this.trailCoordinates[this.trailCoordinates.length - 1];
       const dist = Math.sqrt(Math.pow(last[0] - lng, 2) + Math.pow(last[1] - lat, 2));
-      if (dist > 0.002) { // roughly > 200m teleportation instantly jumps to a new trip or loopback
+      if (dist > 0.002) { // roughly > 200m teleportation instantly jumps ahead or loops back
         this.trailCoordinates = [];
-        this.tripStartCoordinate = null;
+        this.liveTrailStartCoordinate = null;
       }
     }
 
-    if (this.tripStartCoordinate === null) {
-      this.tripStartCoordinate = [lng, lat];
+    if (this.liveTrailStartCoordinate === null) {
+      this.liveTrailStartCoordinate = [lng, lat];
     }
 
     this.trailCoordinates.push([lng, lat]);
@@ -373,10 +374,10 @@ export class IjeMapTracker extends HTMLElement {
         }
     ];
 
-    if (this.tripStartCoordinate) {
+    if (this.liveTrailStartCoordinate) {
         features.push({
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: this.tripStartCoordinate },
+          geometry: { type: 'Point', coordinates: this.liveTrailStartCoordinate },
           properties: { markerType: 'start' }
         });
     }
@@ -466,7 +467,7 @@ export class IjeMapTracker extends HTMLElement {
 
   private async seedLastPosition(deviceId: number): Promise<void> {
     try {
-      const response = await Ije.trips.getDeviceData({ deviceIds: [deviceId], order: 'DESC', limit: 1 });
+      const response = await Ije.telemetry.getDeviceData({ deviceIds: [deviceId], order: 'DESC', limit: 1 });
       const point = response.data[0];
       if (!point) return;
       const data = point.data ?? {};
@@ -574,7 +575,7 @@ export class IjeMapTracker extends HTMLElement {
     titleElement.textContent = `Device ${this.deviceId}`;
     container.appendChild(titleElement);
 
-    if (!this.isTripPickerMode()) {
+    if (!this.isEventPickerMode()) {
       const liveStatusRow = document.createElement('div');
       liveStatusRow.style.cssText = 'display:flex;align-items:center;gap:5px;margin-bottom:8px;';
       liveStatusRow.innerHTML = `<span class="ije-live-dot" style="flex-shrink:0;"></span><span style="color:#22c55e;font-weight:600;font-size:11px;">LIVE</span>`;
@@ -616,15 +617,15 @@ export class IjeMapTracker extends HTMLElement {
     return container;
   }
 
-  // ─── Trip-picker mode ───────────────────────────────────────────────────────
+  // ─── Event-picker mode ───────────────────────────────────────────────────────
 
-  private isTripPickerMode(): boolean {
-    return this.hasAttribute('trip-picker') && !!this.getAttribute('trigger-id');
+  private isEventPickerMode(): boolean {
+    return this.hasAttribute('event-picker') && !!this.getAttribute('trigger-id');
   }
 
-  // Opt-in for hosts that drive the trip window from their own UI (e.g. yoyo-frontend's
+  // Opt-in for hosts that drive the window from their own UI (e.g. yoyo-frontend's
   // playback range control) and don't want the picker's built-in date inputs duplicating it.
-  // The prev/next/count trip-navigation row stays -- only the "Date range" inputs are hidden.
+  // The prev/next/count event-navigation row stays -- only the "Date range" inputs are hidden.
   private isDateRangePickerHidden(): boolean {
     return this.hasAttribute('hide-date-range-picker');
   }
@@ -650,7 +651,7 @@ export class IjeMapTracker extends HTMLElement {
     };
   }
 
-  private async initTripPicker() {
+  private async initEventPicker() {
     this.ensurePickerOverlay();
     this.pickerLoading = true;
     this.updatePickerOverlay();
@@ -660,12 +661,12 @@ export class IjeMapTracker extends HTMLElement {
 
     try {
       if (!this.triggerName) {
-        const { triggers } = await Ije.trips.listTriggers({ limit: 200 });
+        const { triggers } = await Ije.telemetry.listTriggers({ limit: 200 });
         this.triggerName = triggers.find((t) => t.id === triggerId)?.name || `Trigger ${triggerId}`;
       }
 
       const { startsAt, endsAt } = this.getWindow();
-      const { aggregated_events } = await Ije.trips.listAggregatedEvents({
+      const { aggregated_events } = await Ije.telemetry.listAggregatedEvents({
         triggerId,
         deviceIds: this.getDeviceIds(),
         startsAt,
@@ -674,71 +675,71 @@ export class IjeMapTracker extends HTMLElement {
         limit: 500,
       });
 
-      this.trips = aggregated_events || [];
-      this.tripIndex = 0;
+      this.events = aggregated_events || [];
+      this.eventIndex = 0;
     } catch (err) {
-      console.error('[Yoyo ije] Failed to load trips', err);
-      this.trips = [];
+      console.error('[Yoyo ije] Failed to load events', err);
+      this.events = [];
     } finally {
       this.pickerLoading = false;
       this.updatePickerOverlay();
     }
 
-    if (this.trips.length) await this.plotCurrentTrip();
+    if (this.events.length) await this.plotCurrentEvent();
   }
 
-  private async stepTrip(delta: number) {
-    const next = this.tripIndex + delta;
-    if (next < 0 || next >= this.trips.length) return;
-    this.tripIndex = next;
+  private async stepEvent(delta: number) {
+    const next = this.eventIndex + delta;
+    if (next < 0 || next >= this.events.length) return;
+    this.eventIndex = next;
     this.updatePickerOverlay();
-    await this.plotCurrentTrip();
+    await this.plotCurrentEvent();
   }
 
-  /** Activates the trip whose aggregated event has `eventId` -- e.g. from clicking an Events-tab
+  /** Activates the aggregated event with `eventId` -- e.g. from clicking an Events-tab
    *  row in the host app, so the row's "jump to a location in the player" click has somewhere to
-   *  jump to. No-ops if that event isn't in the currently loaded trip list. */
-  async selectTripByEventId(eventId: number): Promise<void> {
-    const index = this.trips.findIndex((trip) => trip.id === eventId);
-    if (index === -1 || index === this.tripIndex) return;
-    this.tripIndex = index;
+   *  jump to. No-ops if that event isn't in the currently loaded list. */
+  async selectEvent(eventId: number): Promise<void> {
+    const index = this.events.findIndex((event) => event.id === eventId);
+    if (index === -1 || index === this.eventIndex) return;
+    this.eventIndex = index;
     this.updatePickerOverlay();
-    await this.plotCurrentTrip();
+    await this.plotCurrentEvent();
   }
 
-  private async plotCurrentTrip() {
-    const event = this.trips[this.tripIndex];
+  private async plotCurrentEvent() {
+    const event = this.events[this.eventIndex];
     if (!event || !this.map) return;
 
     this.telemetry = [];
 
     const startsAt = new Date(event.msg_start_time).getTime();
     const endsAt = new Date(event.msg_end_time).getTime();
-    const token = ++this.tripLoadToken;
+    const token = ++this.eventLoadToken;
 
-    let telemetry: IjeTripTelemetryPoint[] = [];
+    let telemetry: IjeTelemetryPoint[] = [];
     try {
-      telemetry = await Ije.trips.getTripTelemetry({ deviceIds: [event.device_id], startsAt, endsAt });
+      telemetry = await Ije.telemetry.getTelemetry({ deviceIds: [event.device_id], startsAt, endsAt });
     } catch (err) {
-      console.error('[Yoyo ije] Failed to load trip telemetry', err);
+      console.error('[Yoyo ije] Failed to load event telemetry', err);
       return;
     }
-    if (token !== this.tripLoadToken) return; // a newer step superseded this load
+    if (token !== this.eventLoadToken) return; // a newer step superseded this load
 
     this.telemetry = telemetry;
     this.renderPath(telemetry.map((point) => [point.lng, point.lat]));
     this.updatePickerOverlay();
-    this.dispatchEvent(new CustomEvent('ije-trip-changed', {
+    this.dispatchEvent(new CustomEvent('ije-telemetry-changed', {
       detail: { points: telemetry, event },
       bubbles: true,
       composed: true,
     }));
   }
 
-  // Draws a static trip into the existing `device-location` source (trail + start/end markers).
+  // Draws a static path into the existing `device-location` source (trail + start/end markers).
   private renderPath(path: [number, number][]) {
     if (Ije.config?.debug) {
-      console.log(`[Yoyo ije][TripExplorer] renderPath called with ${path.length} coordinates`);
+      console.log(`[Yoyo ije][RenderPath] renderPath called with ${path.length} coordinates`);
     }
     if (!this.map) return;
 
@@ -768,9 +769,9 @@ export class IjeMapTracker extends HTMLElement {
 
   // ─── Timeline scrubbing (public API) ────────────────────────────────────────
   // Play/pause/speed/drag-to-seek live in the host app's own Timeline Bar; this widget just
-  // exposes telemetry (via the `ije-trip-changed` event) and setPointIndex to move the marker.
+  // exposes telemetry (via the `ije-telemetry-changed` event) and setPointIndex to move the marker.
 
-  getTripPointCount(): number {
+  getPointCount(): number {
     return this.telemetry.length;
   }
 
@@ -819,10 +820,10 @@ export class IjeMapTracker extends HTMLElement {
       <div style="margin-bottom:8px;">
         <div style="font-size:10px;font-weight:600;color:var(--yoyo-muted,#888);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Date range</div>
         <div style="display:flex;align-items:center;gap:4px;">
-          <input class="ije-tp-from" type="date" style="${inputStyle}">
+          <input class="ije-ep-from" type="date" style="${inputStyle}">
           <span style="font-size:11px;color:var(--yoyo-muted,#aaa);flex-shrink:0;">–</span>
-          <input class="ije-tp-to" type="date" style="${inputStyle}">
-          <button class="ije-tp-go" style="padding:4px 10px;font-size:11px;font-weight:600;border:none;border-radius:6px;background:${primary};color:#fff;cursor:pointer;flex-shrink:0;">Go</button>
+          <input class="ije-ep-to" type="date" style="${inputStyle}">
+          <button class="ije-ep-go" style="padding:4px 10px;font-size:11px;font-weight:600;border:none;border-radius:6px;background:${primary};color:#fff;cursor:pointer;flex-shrink:0;">Go</button>
         </div>
       </div>`;
     // Without the date-range block above, the nav row is the top of the panel -- drop the
@@ -835,27 +836,27 @@ export class IjeMapTracker extends HTMLElement {
       <div style="${navRowStyle}">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <div style="min-width:0;">
-            <div class="ije-tp-date" style="font-weight:600;font-size:13px;color:var(--yoyo-foreground,#111);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
-            <div class="ije-tp-trigger" style="font-size:11px;color:var(--yoyo-muted,#666);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+            <div class="ije-ep-date" style="font-weight:600;font-size:13px;color:var(--yoyo-foreground,#111);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+            <div class="ije-ep-trigger" style="font-size:11px;color:var(--yoyo-muted,#666);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
           </div>
           <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;">
-            <button class="ije-tp-prev" aria-label="Previous trip"
+            <button class="ije-ep-prev" aria-label="Previous event"
               style="border:none;background:none;cursor:pointer;font-size:22px;line-height:1;color:${primary};padding:2px 6px;">‹</button>
-            <span class="ije-tp-count" style="font-size:12px;color:var(--yoyo-muted,#666);min-width:44px;text-align:center;"></span>
-            <button class="ije-tp-next" aria-label="Next trip"
+            <span class="ije-ep-count" style="font-size:12px;color:var(--yoyo-muted,#666);min-width:44px;text-align:center;"></span>
+            <button class="ije-ep-next" aria-label="Next event"
               style="border:none;background:none;cursor:pointer;font-size:22px;line-height:1;color:${primary};padding:2px 6px;">›</button>
           </div>
         </div>
       </div>`;
 
-    el.querySelector('.ije-tp-prev')!.addEventListener('click', () => void this.stepTrip(-1));
-    el.querySelector('.ije-tp-next')!.addEventListener('click', () => void this.stepTrip(1));
-    el.querySelector('.ije-tp-go')?.addEventListener('click', () => {
-      const from = (el.querySelector('.ije-tp-from') as HTMLInputElement).value;
-      const to   = (el.querySelector('.ije-tp-to')   as HTMLInputElement).value;
+    el.querySelector('.ije-ep-prev')!.addEventListener('click', () => void this.stepEvent(-1));
+    el.querySelector('.ije-ep-next')!.addEventListener('click', () => void this.stepEvent(1));
+    el.querySelector('.ije-ep-go')?.addEventListener('click', () => {
+      const from = (el.querySelector('.ije-ep-from') as HTMLInputElement).value;
+      const to   = (el.querySelector('.ije-ep-to')   as HTMLInputElement).value;
       this.windowStartsAt = from ? Math.floor(new Date(from + 'T00:00:00Z').getTime() / 1000) : undefined;
       this.windowEndsAt   = to   ? Math.floor(new Date(to   + 'T23:59:59Z').getTime() / 1000) : undefined;
-      void this.initTripPicker();
+      void this.initEventPicker();
     });
 
     this.mapWrapper.appendChild(el);
@@ -865,14 +866,14 @@ export class IjeMapTracker extends HTMLElement {
   private updatePickerOverlay() {
     if (!this.pickerOverlay) return;
 
-    const total   = this.trips.length;
-    const current = this.trips[this.tripIndex];
-    const dateEl  = this.pickerOverlay.querySelector('.ije-tp-date')    as HTMLElement;
-    const nameEl  = this.pickerOverlay.querySelector('.ije-tp-trigger') as HTMLElement;
-    const countEl = this.pickerOverlay.querySelector('.ije-tp-count')   as HTMLElement;
-    const prevBtn = this.pickerOverlay.querySelector('.ije-tp-prev') as HTMLButtonElement;
-    const nextBtn = this.pickerOverlay.querySelector('.ije-tp-next') as HTMLButtonElement;
-    const goBtn   = this.pickerOverlay.querySelector('.ije-tp-go')   as HTMLButtonElement | null;
+    const total   = this.events.length;
+    const current = this.events[this.eventIndex];
+    const dateEl  = this.pickerOverlay.querySelector('.ije-ep-date')    as HTMLElement;
+    const nameEl  = this.pickerOverlay.querySelector('.ije-ep-trigger') as HTMLElement;
+    const countEl = this.pickerOverlay.querySelector('.ije-ep-count')   as HTMLElement;
+    const prevBtn = this.pickerOverlay.querySelector('.ije-ep-prev') as HTMLButtonElement;
+    const nextBtn = this.pickerOverlay.querySelector('.ije-ep-next') as HTMLButtonElement;
+    const goBtn   = this.pickerOverlay.querySelector('.ije-ep-go')   as HTMLButtonElement | null;
 
     if (this.pickerLoading) {
       dateEl.textContent  = 'Loading…';
@@ -887,11 +888,11 @@ export class IjeMapTracker extends HTMLElement {
     if (goBtn) goBtn.disabled = false;
     dateEl.textContent  = current
       ? new Date(current.msg_start_time).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-      : 'No trips found';
+      : 'No events found';
     nameEl.textContent  = this.triggerName || '';
-    countEl.textContent = total ? `${this.tripIndex + 1} / ${total}` : '';
-    prevBtn.disabled    = this.tripIndex <= 0;
-    nextBtn.disabled    = this.tripIndex >= total - 1;
+    countEl.textContent = total ? `${this.eventIndex + 1} / ${total}` : '';
+    prevBtn.disabled    = this.eventIndex <= 0;
+    nextBtn.disabled    = this.eventIndex >= total - 1;
     prevBtn.style.opacity = prevBtn.disabled ? '0.3' : '1';
     nextBtn.style.opacity = nextBtn.disabled ? '0.3' : '1';
   }

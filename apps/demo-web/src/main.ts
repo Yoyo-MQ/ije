@@ -362,7 +362,7 @@ async function refreshTriggers(deviceId?: number) {
   triggerCombo.setDisabled(true);
   triggerCombo.setPlaceholder('Loading…');
   try {
-    const { triggers } = await Ije.trips.listTriggers({ limit: 200, deviceId });
+    const { triggers } = await Ije.telemetry.listTriggers({ limit: 200, deviceId });
     triggerCombo.setItems(triggers.map(t => ({ value: String(t.id), label: t.name })));
     triggerCombo.setPlaceholder(triggers.length ? 'Search triggers…' : 'No triggers found');
   } catch {
@@ -379,7 +379,7 @@ function loadTrips() {
   tripMapContainer.innerHTML = '';
 
   const mapEl = document.createElement('ije-map-tracker');
-  mapEl.setAttribute('trip-picker', '');
+  mapEl.setAttribute('event-picker', '');
   mapEl.setAttribute('trigger-id', triggerId);
 
   const deviceId = tripDeviceCombo.getValue();
@@ -481,7 +481,7 @@ async function populateDevicePickers() {
   liveDeviceCombo.setPlaceholder('Loading devices…');
 
   try {
-    const { devices } = await Ije.trips.listDevices({ limit: 500 });
+    const { devices } = await Ije.telemetry.listDevices({ limit: 500 });
     const deviceItems = devices.map(d => ({
       value: String(d.device_id),
       label: d.name || d.identifier,

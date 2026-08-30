@@ -9,14 +9,15 @@ export interface IjeDeviceTrackerViewProps {
   helpMessage?: string;
   width?: string;
   height?: string;
-  /** Trip-picker mode: pass trigger-id + optional trigger-name to enable historical trip replay. */
-  tripPicker?: boolean;
+  /** Event-picker mode: pass trigger-id + optional trigger-name to step through one trigger's
+   *  aggregated events one at a time, each with its own recorded route. */
+  eventPicker?: boolean;
   triggerId?: number;
   triggerName?: string;
   startsAt?: number;
   endsAt?: number;
-  /** Hides the trip-picker's built-in "Date range" inputs -- for hosts that drive the trip
-   *  window from their own UI instead. The prev/next/count trip-navigation row stays. */
+  /** Hides event-picker mode's built-in "Date range" inputs -- for hosts that drive the window
+   *  from their own UI instead. The prev/next/count event-navigation row stays. */
   hideDateRangePicker?: boolean;
   /** Current-position marker style. Defaults to a circle at the theme's primary color. */
   markerShape?: 'circle' | 'square' | 'pin' | 'car' | 'motorcycle' | 'truck' | 'drone';
@@ -26,9 +27,10 @@ export interface IjeDeviceTrackerViewProps {
 }
 
 /** Ref handle for driving the underlying <ije-map-tracker> element imperatively, e.g.
- *  setPointIndex(i) to move the marker to a trip's i-th telemetry point, or
- *  addEventListener('ije-trip-changed', ...) to know when a new trip's telemetry has loaded --
- *  both are what a host-app Timeline Bar needs to drive playback from outside the widget. */
+ *  setPointIndex(i) to move the marker to the i-th telemetry point, or
+ *  addEventListener('ije-telemetry-changed', ...) to know when a new window's telemetry has
+ *  loaded -- both are what a host-app Timeline Bar needs to drive playback from outside the
+ *  widget. */
 export type IjeDeviceTrackerViewHandle = IjeMapTracker;
 
 export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDeviceTrackerViewProps>(
@@ -39,7 +41,7 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
       helpMessage,
       width,
       height,
-      tripPicker,
+      eventPicker,
       triggerId,
       triggerName,
       startsAt,
@@ -62,7 +64,7 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
         help-message={helpMessage}
         width={width}
         height={height}
-        trip-picker={tripPicker ? '' : undefined}
+        event-picker={eventPicker ? '' : undefined}
         trigger-id={triggerId}
         trigger-name={triggerName}
         starts-at={startsAt}

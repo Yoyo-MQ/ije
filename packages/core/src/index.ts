@@ -1,6 +1,6 @@
 import { IjeMqttManager } from './mqttManager';
 import { IjeChatClient } from './chatClient';
-import { IjeTripsClient } from './tripsClient';
+import { IjeTelemetryClient } from './telemetryClient';
 import { IjeHttpClient } from './httpClient';
 
 export type {
@@ -24,11 +24,11 @@ export type {
   IjeDevicesResponse,
   IjeAggregatedEventsResponse,
   IjeDeviceDataResponse,
-  IjeTripTelemetryPoint,
+  IjeTelemetryPoint,
   ListAggregatedEventsParams,
   GetDeviceDataParams,
-} from './tripsClient';
-export { IjeTripsClient } from './tripsClient';
+} from './telemetryClient';
+export { IjeTelemetryClient } from './telemetryClient';
 export { IjeHttpClient } from './httpClient';
 
 export interface SdkConfig {
@@ -61,7 +61,7 @@ export class IjeSDK {
   public isInitialized = false;
   public mqtt: IjeMqttManager;
   public chat: IjeChatClient;
-  public trips: IjeTripsClient;
+  public telemetry: IjeTelemetryClient;
   public http: IjeHttpClient;
   /**
    * Server-resolved Whitelabelling entitlement (GET /public/api/v1/context). When true, widgets
@@ -74,7 +74,7 @@ export class IjeSDK {
   private constructor() {
     this.mqtt = new IjeMqttManager();
     this.chat = new IjeChatClient();
-    this.trips = new IjeTripsClient();
+    this.telemetry = new IjeTelemetryClient();
     this.http = new IjeHttpClient();
   }
 
@@ -105,7 +105,7 @@ export class IjeSDK {
     } as SdkConfig;
 
     this.chat._setConfig(this.config);
-    this.trips._setConfig(this.config);
+    this.telemetry._setConfig(this.config);
     this.http._setConfig(this.config);
 
     // Resolve the organization UUID so UI widgets can build correct MQTT topics, and the

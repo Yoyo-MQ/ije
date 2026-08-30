@@ -97,7 +97,7 @@ export interface GetDeviceDataParams {
   offset?: number;
 }
 
-export class IjeTripsClient {
+export class IjeTelemetryClient {
   private http = new IjeHttpClient();
   private config: SdkConfig | null = null;
 
@@ -154,20 +154,20 @@ export class IjeTripsClient {
    * chronological [lng, lat] pairs ready for maplibre.
    * startsAt and endsAt are Unix milliseconds.
    */
-  async getTripPath(params: { deviceIds: number[]; startsAt: number; endsAt: number }): Promise<[number, number][]> {
-    const telemetry = await this.getTripTelemetry(params);
+  async getPath(params: { deviceIds: number[]; startsAt: number; endsAt: number }): Promise<[number, number][]> {
+    const telemetry = await this.getTelemetry(params);
     return telemetry.map((point): [number, number] => [point.lng, point.lat]);
   }
 
   /**
    * Fetches all telemetry for a window by paging through device_data, keeping timestamp and
    * speed alongside each coordinate (for a Timeline Bar's scrubber labels) rather than just the
-   * bare path getTripPath returns. startsAt and endsAt are Unix milliseconds.
+   * bare path getPath returns. startsAt and endsAt are Unix milliseconds.
    */
-  async getTripTelemetry(params: { deviceIds: number[]; startsAt: number; endsAt: number }): Promise<IjeTripTelemetryPoint[]> {
+  async getTelemetry(params: { deviceIds: number[]; startsAt: number; endsAt: number }): Promise<IjeTelemetryPoint[]> {
     const debug = this.config?.debug;
     const pageSize = 500;
-    const points: IjeTripTelemetryPoint[] = [];
+    const points: IjeTelemetryPoint[] = [];
     const partialQueryExpression = `timestamp >= ${params.startsAt} AND timestamp <= ${params.endsAt}`;
     let totalRows = 0;
 
@@ -181,7 +181,7 @@ export class IjeTripsClient {
       });
       totalRows += page.data.length;
       if (debug && offset === 0 && page.data.length > 0) {
-        console.log('[Yoyo ije][TripPath] first row data sample:', page.data[0].data);
+        console.log('[Yoyo ije][Telemetry] first row data sample:', page.data[0].data);
       }
       for (const row of page.data) {
         const point = extractTelemetryPoint(row);
@@ -191,15 +191,15 @@ export class IjeTripsClient {
     }
 
     if (debug) {
-      console.log(`[Yoyo ije][TripPath] fetched ${totalRows} rows → ${points.length} valid points`, { partialQueryExpression });
+      console.log(`[Yoyo ije][Telemetry] fetched ${totalRows} rows → ${points.length} valid points`, { partialQueryExpression });
     }
     return points;
   }
 }
 
-/** One trip telemetry point: coordinate plus when it was recorded and how fast, for a Timeline
+/** One telemetry point: coordinate plus when it was recorded and how fast, for a Timeline
  *  Bar's scrubber labels. `speedKmh` is null when the row carries no speed field. */
-export interface IjeTripTelemetryPoint {
+export interface IjeTelemetryPoint {
   lng: number;
   lat: number;
   timestampMs: number;
@@ -208,7 +208,7 @@ export interface IjeTripTelemetryPoint {
 
 /** Reads one telemetry point from a row, tolerating common field name variants. Drops rows with
  *  no usable coordinate or timestamp -- both are required for a Timeline Bar to place the point. */
-function extractTelemetryPoint(row: IjeDeviceDataPoint): IjeTripTelemetryPoint | null {
+function extractTelemetryPoint(row: IjeDeviceDataPoint): IjeTelemetryPoint | null {
   const data = row?.data ?? {};
   const lat = Number(data.lat ?? data.latitude ?? data.Lat ?? data.Latitude);
   const lng = Number(data.lng ?? data.lon ?? data.longitude ?? data.Lng ?? data.Lon ?? data.Longitude);
