@@ -21,6 +21,12 @@ export class IjeMapTracker extends HTMLElement {
   private static readonly MARKER_ICON_IMAGE_ID = 'ije-current-marker-icon';
 
   private map: maplibregl.Map | null = null;
+  // Set once by the map's own 'load' event (connectedCallback). renderPath used to check
+  // `map.isStyleLoaded()` and fall back to `map.once('load', draw)` -- a real race once
+  // event-picker/history mode started awaiting waitForSdkConfig() first: 'load' had often
+  // already fired by the time that registration ran, so the once-listener never fired and the
+  // route silently never drew. This flag plus waitForMapStyleLoaded() below replace that.
+  private mapStyleLoaded = false;
   private currentMarkerPulseFrameId: number | null = null;
   private deviceId: string | null = null;
   private liveTopic: string | null = null;
@@ -211,6 +217,7 @@ export class IjeMapTracker extends HTMLElement {
 
     // Register click-to-popup on the current-position marker once the style loads.
     this.map.on('load', () => {
+      this.mapStyleLoaded = true;
       this.applyMarkerStyle();
       this.setupMarkerClickHandler();
       // Only live mode has a genuinely "live" current position — event-picker/history mode's
@@ -672,7 +679,39 @@ export class IjeMapTracker extends HTMLElement {
     };
   }
 
+  // A host's `Ije.init(config)` call (e.g. IjeProvider's own useEffect) always runs strictly
+  // after this element's connectedCallback -- DOM insertion (and therefore connectedCallback)
+  // happens synchronously during React's commit phase, while useEffect is a passive effect that
+  // only runs afterward. Live mode already handles this by deferring its network-dependent work
+  // to the `ije-context-ready` event (see handleContextReady); event-picker/history mode fetch
+  // immediately in connectedCallback and need the same kind of wait, just for the config itself
+  // (not the fuller org-context resolution `ije-context-ready` signals).
+  private waitForSdkConfig(): Promise<void> {
+    if (Ije.config) return Promise.resolve();
+    return new Promise((resolve) => {
+      const check = () => {
+        if (Ije.config) resolve();
+        else requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    });
+  }
+
+  // See mapStyleLoaded's own comment: waits for the map's 'load' event (already fired or not)
+  // without the once-listener race renderPath used to have.
+  private waitForMapStyleLoaded(): Promise<void> {
+    if (this.mapStyleLoaded) return Promise.resolve();
+    return new Promise((resolve) => {
+      const check = () => {
+        if (this.mapStyleLoaded) resolve();
+        else requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    });
+  }
+
   private async initEventPicker() {
+    await this.waitForSdkConfig();
     this.ensurePickerOverlay();
     this.pickerLoading = true;
     this.updatePickerOverlay();
@@ -763,6 +802,7 @@ export class IjeMapTracker extends HTMLElement {
    *  optional here: given, they bound the window; omitted, getTelemetry falls back to recent
    *  activity. */
   private async initHistoryMode() {
+    await this.waitForSdkConfig();
     const deviceIds = this.getDeviceIds();
     if (!deviceIds.length) return;
     const { startsAt, endsAt } = this.getWindow(); // Unix seconds, either/both may be undefined
@@ -819,8 +859,8 @@ export class IjeMapTracker extends HTMLElement {
       }
     };
 
-    if (this.map.isStyleLoaded()) draw();
-    else this.map.once('load', draw);
+    if (this.mapStyleLoaded) draw();
+    else void this.waitForMapStyleLoaded().then(draw);
   }
 
   // ─── Timeline scrubbing (public API) ────────────────────────────────────────
