@@ -271,6 +271,17 @@ Hosts that never configure `resourceLinkResolvers` or this listener still get a 
 working experience — just via the popover and plain navigation instead of an SPA-aware
 one.
 
+**Knowing when a conversation changes.** Every successful `ask()` (typed or
+programmatic) dispatches `ije-conversation-updated` (`detail: { sessionId }`). Use it to
+invalidate a conversation list you're caching elsewhere (e.g. a React Query list), since
+the widget itself has no reason to know that list exists:
+
+```ts
+document.querySelector('ije-chat').addEventListener('ije-conversation-updated', () => {
+  queryClient.invalidateQueries({ queryKey: mimirConversationsQueryKeys.lists() });
+});
+```
+
 ### `<ije-aggregate-stat>` — static multi-metric card
 
 Driven by data you supply (not MQTT). Set the `data-json` attribute or the `.data`
