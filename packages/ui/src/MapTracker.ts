@@ -53,6 +53,11 @@ export class IjeMapTracker extends HTMLElement {
   private windowStartsAt: number | undefined = undefined; // Unix seconds, set by date picker
   private windowEndsAt: number | undefined = undefined;
 
+  // History mode's empty state -- a centered map overlay, distinct from event-picker's
+  // bottom-left picker panel (which already has its own "No events found" text baked into its
+  // nav row). History mode has no such panel, so an empty result was previously silent.
+  private emptyStateOverlay: HTMLDivElement | null = null;
+
   // Guards an in-flight telemetry load (event-picker's plotCurrentEvent or history mode's
   // initHistoryMode) against a slower earlier load overwriting a newer one.
   private telemetryLoadToken = 0;
@@ -808,6 +813,7 @@ export class IjeMapTracker extends HTMLElement {
     const { startsAt, endsAt } = this.getWindow(); // Unix seconds, either/both may be undefined
 
     this.telemetry = [];
+    this.showEmptyStateOverlay(false);
     const token = ++this.telemetryLoadToken;
 
     let telemetry: IjeTelemetryPoint[] = [];
@@ -824,7 +830,11 @@ export class IjeMapTracker extends HTMLElement {
     if (token !== this.telemetryLoadToken) return; // a newer window superseded this load
 
     this.telemetry = telemetry;
-    this.renderPath(telemetry.map((point) => [point.lng, point.lat]));
+    if (telemetry.length === 0) {
+      this.showEmptyStateOverlay(true, startsAt != null && endsAt != null);
+    } else {
+      this.renderPath(telemetry.map((point) => [point.lng, point.lat]));
+    }
     this.dispatchEvent(new CustomEvent('ije-telemetry-changed', {
       detail: { points: telemetry },
       bubbles: true,
@@ -886,6 +896,36 @@ export class IjeMapTracker extends HTMLElement {
     ];
     // @ts-ignore - maplibre getSource types can be strict
     this.map.getSource('device-location')?.setData({ type: 'FeatureCollection', features });
+  }
+
+  /** Shows/hides history mode's centered "no data" overlay. `boundedWindow` distinguishes the
+   *  message: a bounded starts-at/ends-at window that came back empty is "nothing in this time
+   *  frame" (the device may have data elsewhere); an unbounded recent-activity fetch coming back
+   *  empty means the device has never reported at all. */
+  private showEmptyStateOverlay(show: boolean, boundedWindow = false) {
+    if (!show) {
+      this.emptyStateOverlay?.remove();
+      this.emptyStateOverlay = null;
+      return;
+    }
+    if (this.emptyStateOverlay || !this.mapWrapper) return;
+
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'position:absolute', 'inset:0', 'z-index:10',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'pointer-events:none',
+    ].join(';');
+    el.innerHTML = `
+      <div style="
+        padding:10px 16px; border-radius:10px; font-family:sans-serif; font-size:13px;
+        font-weight:600; text-align:center; color:var(--yoyo-muted,#888);
+        background:color-mix(in srgb, var(--yoyo-card-bg, #fff) 97%, transparent);
+        box-shadow:0 2px 12px rgba(0,0,0,0.2);
+      ">${boundedWindow ? 'No data for this device in the selected time frame' : 'No data for this device yet'}</div>`;
+
+    this.mapWrapper.appendChild(el);
+    this.emptyStateOverlay = el;
   }
 
   private ensurePickerOverlay() {
