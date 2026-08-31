@@ -1,5 +1,5 @@
 import maplibregl from 'maplibre-gl';
-import { Ije, type IjeAggregatedEvent, type IjeTelemetryPoint } from '@yoyomq/ije-core';
+import { Ije, type IjeAggregatedEvent, type IjeTelemetryPoint, type IjeTelemetryPage } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 
 export class IjeMapTracker extends HTMLElement {
@@ -19,6 +19,16 @@ export class IjeMapTracker extends HTMLElement {
   // layer using a canvas-generated icon, since MapLibre circle layers can't be non-circular.
   private static readonly MARKER_SIZE_RADIUS_PX: Record<string, number> = { sm: 6, md: 8, lg: 11 };
   private static readonly MARKER_ICON_IMAGE_ID = 'ije-current-marker-icon';
+
+  // History mode's unbounded "recent activity" window (see initHistoryMode) hydrates one more
+  // page of older telemetry as the scrubber nears the start of what's loaded (see
+  // hydrateOlderTelemetryIfNeeded), capped here so a device with months of history can't grow
+  // this without bound -- mirrors the existing MAX_PAGES=20 x 500 ceiling getTelemetry's bounded
+  // branch already uses for an explicit window.
+  private static readonly MAX_UNBOUNDED_TELEMETRY_POINTS = 10000;
+  // How close to index 0 (the oldest loaded point) a scrub/click needs to land to trigger
+  // hydration -- small buffer so a fast rewind doesn't visibly hit a wall before the fetch starts.
+  private static readonly HYDRATE_NEAR_EDGE_THRESHOLD = 5;
 
   private map: maplibregl.Map | null = null;
   // Set once by the map's own 'load' event (connectedCallback). renderPath used to check
@@ -66,6 +76,12 @@ export class IjeMapTracker extends HTMLElement {
   // event-picker mode (one trigger event) or history mode (a plain starts-at/ends-at window).
   // Driven by an external Timeline Bar via setPointIndex() -- see "Timeline scrubbing" below.
   private telemetry: IjeTelemetryPoint[] = [];
+
+  // History mode's unbounded window only (see initHistoryMode/hydrateOlderTelemetryIfNeeded):
+  // whether an older page may still exist before telemetry[0], and a guard against overlapping
+  // hydration fetches from rapid scrubbing.
+  private hasMoreOlderTelemetry = false;
+  private isHydratingOlderTelemetry = false;
 
   static get observedAttributes() {
     return ['device-id', 'title', 'help-message', 'marker-shape', 'marker-size', 'marker-color'];
@@ -811,18 +827,28 @@ export class IjeMapTracker extends HTMLElement {
     const deviceIds = this.getDeviceIds();
     if (!deviceIds.length) return;
     const { startsAt, endsAt } = this.getWindow(); // Unix seconds, either/both may be undefined
+    const isBoundedWindow = startsAt != null && endsAt != null;
 
     this.telemetry = [];
+    this.hasMoreOlderTelemetry = false;
     this.showEmptyStateOverlay(false);
     const token = ++this.telemetryLoadToken;
 
     let telemetry: IjeTelemetryPoint[] = [];
     try {
-      telemetry = await Ije.telemetry.getTelemetry({
-        deviceIds,
-        startsAt: startsAt != null ? startsAt * 1000 : undefined,
-        endsAt: endsAt != null ? endsAt * 1000 : undefined,
-      });
+      if (isBoundedWindow) {
+        telemetry = await Ije.telemetry.getTelemetry({
+          deviceIds,
+          startsAt: startsAt! * 1000,
+          endsAt: endsAt! * 1000,
+        });
+      } else {
+        // Unbounded "recent activity": use the page-aware fetch so hydrateOlderTelemetryIfNeeded
+        // knows whether an older page may exist once the user scrubs toward the start.
+        const page = await Ije.telemetry.getTelemetryPage({ deviceIds });
+        telemetry = page.points;
+        this.hasMoreOlderTelemetry = page.hasMore;
+      }
     } catch (err) {
       console.error('[Yoyo ije] Failed to load telemetry', err);
       return;
@@ -831,7 +857,7 @@ export class IjeMapTracker extends HTMLElement {
 
     this.telemetry = telemetry;
     if (telemetry.length === 0) {
-      this.showEmptyStateOverlay(true, startsAt != null && endsAt != null);
+      this.showEmptyStateOverlay(true, isBoundedWindow);
     } else {
       this.renderPath(telemetry.map((point) => [point.lng, point.lat]));
     }
@@ -898,6 +924,48 @@ export class IjeMapTracker extends HTMLElement {
     ];
     // @ts-ignore - maplibre getSource types can be strict
     this.map.getSource('device-location')?.setData({ type: 'FeatureCollection', features });
+
+    if (this.isHistoryMode() && clamped <= IjeMapTracker.HYDRATE_NEAR_EDGE_THRESHOLD) {
+      void this.hydrateOlderTelemetryIfNeeded();
+    }
+  }
+
+  /** Fetches one more page of older telemetry once the scrubber nears the start of what's
+   *  loaded -- history mode's unbounded "recent activity" window only (see initHistoryMode);
+   *  bounded windows already load their whole range up front. Prepends to `this.telemetry` and
+   *  dispatches `ije-telemetry-extended` (not `ije-telemetry-changed`, which the host treats as a
+   *  fresh window and resets its scrub position for) carrying `prependedCount` so the host can
+   *  shift its own index by the same amount and stay anchored on the same visual point. */
+  private async hydrateOlderTelemetryIfNeeded(): Promise<void> {
+    if (!this.hasMoreOlderTelemetry || this.isHydratingOlderTelemetry || this.telemetry.length === 0) return;
+    if (this.telemetry.length >= IjeMapTracker.MAX_UNBOUNDED_TELEMETRY_POINTS) {
+      this.hasMoreOlderTelemetry = false;
+      return;
+    }
+
+    this.isHydratingOlderTelemetry = true;
+    const token = this.telemetryLoadToken;
+    const oldestLoadedMs = this.telemetry[0].timestampMs;
+    const deviceIds = this.getDeviceIds();
+
+    try {
+      const page: IjeTelemetryPage = await Ije.telemetry.getTelemetryPage({ deviceIds, beforeMs: oldestLoadedMs });
+      if (token !== this.telemetryLoadToken) return; // a newer window superseded this load
+      this.hasMoreOlderTelemetry = page.hasMore;
+      if (page.points.length === 0) return;
+
+      this.telemetry = [...page.points, ...this.telemetry];
+      this.renderPath(this.telemetry.map((point) => [point.lng, point.lat]));
+      this.dispatchEvent(new CustomEvent('ije-telemetry-extended', {
+        detail: { points: this.telemetry, prependedCount: page.points.length },
+        bubbles: true,
+        composed: true,
+      }));
+    } catch (err) {
+      console.error('[Yoyo ije] Failed to hydrate older telemetry', err);
+    } finally {
+      this.isHydratingOlderTelemetry = false;
+    }
   }
 
   /** Shows/hides history mode's centered "no data" overlay. `boundedWindow` distinguishes the

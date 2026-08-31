@@ -25,6 +25,7 @@ export type {
   IjeAggregatedEventsResponse,
   IjeDeviceDataResponse,
   IjeTelemetryPoint,
+  IjeTelemetryPage,
   ListAggregatedEventsParams,
   GetDeviceDataParams,
 } from './telemetryClient';
