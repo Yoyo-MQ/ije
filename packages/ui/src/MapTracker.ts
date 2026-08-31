@@ -881,16 +881,18 @@ export class IjeMapTracker extends HTMLElement {
     return this.telemetry.length;
   }
 
-  /** Moves the current-position marker and trail to `this.telemetry[index]`, clamped to range. */
+  /** Moves the current-position marker to `this.telemetry[index]`, clamped to range. The full
+   *  route stays drawn at all times (matches renderPath) -- only the marker moves; the trail is
+   *  not re-sliced to the index, so the route is never empty/collapsed at index 0. */
   setPointIndex(index: number): void {
     if (!this.map || this.telemetry.length === 0) return;
     const clamped = Math.max(0, Math.min(index, this.telemetry.length - 1));
-    const trail = this.telemetry.slice(0, clamped + 1).map((point): [number, number] => [point.lng, point.lat]);
-    const current = trail[trail.length - 1];
-    const start: [number, number] = [this.telemetry[0].lng, this.telemetry[0].lat];
+    const fullTrail = this.telemetry.map((point): [number, number] => [point.lng, point.lat]);
+    const current = fullTrail[clamped];
+    const start = fullTrail[0];
 
     const features: any[] = [
-      { type: 'Feature', geometry: { type: 'LineString', coordinates: trail }, properties: {} },
+      { type: 'Feature', geometry: { type: 'LineString', coordinates: fullTrail }, properties: {} },
       { type: 'Feature', geometry: { type: 'Point', coordinates: start }, properties: { markerType: 'start' } },
       { type: 'Feature', geometry: { type: 'Point', coordinates: current }, properties: { markerType: 'current' } },
     ];
