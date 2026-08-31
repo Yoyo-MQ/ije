@@ -180,22 +180,11 @@ export class IjeTelemetryClient {
     const points: IjeTelemetryPoint[] = [];
 
     if (params.startsAt == null || params.endsAt == null) {
-      const page = await this.getDeviceData({
-        deviceIds: params.deviceIds,
-        partialQueryExpression: 'lat != 0 AND lng != 0',
-        order: 'DESC',
-        limit: params.limit ?? pageSize,
-        offset: 0,
-      });
-      for (const row of page.data) {
-        const point = extractTelemetryPoint(row);
-        if (point) points.push(point);
-      }
-      points.reverse(); // DESC comes back newest-first; callers expect chronological order.
+      const { points: recentPoints } = await this.getTelemetryPage({ deviceIds: params.deviceIds, limit: params.limit });
       if (debug) {
-        console.log(`[Yoyo ije][Telemetry] recent-activity fetch → ${points.length} valid points`);
+        console.log(`[Yoyo ije][Telemetry] recent-activity fetch → ${recentPoints.length} valid points`);
       }
-      return points;
+      return recentPoints;
     }
 
     const partialQueryExpression = `timestamp >= ${params.startsAt} AND timestamp <= ${params.endsAt} AND lat != 0 AND lng != 0`;
@@ -225,6 +214,36 @@ export class IjeTelemetryClient {
     }
     return points;
   }
+
+  /**
+   * Fetches one page of a device's most-recent-first telemetry, chronological order, optionally
+   * strictly before `beforeMs` (Unix ms). The building block "recent activity" (unbounded)
+   * history mode uses for its first page, and again to hydrate further into the past as the user
+   * scrubs toward the oldest currently-loaded point (passing that point's own timestampMs as
+   * `beforeMs`). `hasMore` is true when a full page came back -- an older page may still exist,
+   * though the next fetch could still come back empty (e.g. the boundary lands mid-gap).
+   */
+  async getTelemetryPage(params: { deviceIds: number[]; beforeMs?: number; limit?: number }): Promise<IjeTelemetryPage> {
+    const limit = params.limit ?? 500;
+    const expressionParts = ['lat != 0 AND lng != 0'];
+    if (params.beforeMs != null) expressionParts.push(`timestamp < ${params.beforeMs}`);
+
+    const page = await this.getDeviceData({
+      deviceIds: params.deviceIds,
+      partialQueryExpression: expressionParts.join(' AND '),
+      order: 'DESC',
+      limit,
+      offset: 0,
+    });
+
+    const points: IjeTelemetryPoint[] = [];
+    for (const row of page.data) {
+      const point = extractTelemetryPoint(row);
+      if (point) points.push(point);
+    }
+    points.reverse(); // DESC comes back newest-first; callers expect chronological order.
+    return { points, hasMore: page.data.length === limit };
+  }
 }
 
 /** One telemetry point: coordinate plus when it was recorded and how fast, for a Timeline
@@ -234,6 +253,12 @@ export interface IjeTelemetryPoint {
   lat: number;
   timestampMs: number;
   speedKmh: number | null;
+}
+
+/** One page of getTelemetryPage's most-recent-first fetch. See getTelemetryPage for `hasMore`. */
+export interface IjeTelemetryPage {
+  points: IjeTelemetryPoint[];
+  hasMore: boolean;
 }
 
 /** Reads one telemetry point from a row, tolerating common field name variants. Drops rows with
