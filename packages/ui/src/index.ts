@@ -7,3 +7,18 @@ export type { ResourceLinkResolvers } from './IjeChat';
 export { IjeMapTracker } from './MapTracker';
 export { IjeTelemetryChart } from './TelemetryChart';
 export { IjeTelemetryStat } from './TelemetryStat';
+export {
+  circleToPolygonRing,
+  closePolygonRing,
+  geofencesToFeatureCollection,
+  isPositionInsideGeofence,
+  resolveEmphasisedGeofences,
+} from './geofence';
+export type {
+  IjeGeofenceCenter,
+  IjeGeofenceCircle,
+  IjeGeofenceOverlay,
+  IjeGeofencePolygon,
+  IjeGeofenceShape,
+  IjeGeoJsonCoordinate,
+} from './geofence';

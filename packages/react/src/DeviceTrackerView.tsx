@@ -1,7 +1,7 @@
 'use client';
 
-import { forwardRef, useRef, useImperativeHandle } from 'react';
-import type { IjeMapTracker } from '@yoyomq/ije-ui';
+import { forwardRef, useEffect, useRef, useImperativeHandle } from 'react';
+import type { IjeGeofenceOverlay, IjeMapTracker } from '@yoyomq/ije-ui';
 
 export interface IjeDeviceTrackerViewProps {
   deviceId: number;
@@ -30,6 +30,12 @@ export interface IjeDeviceTrackerViewProps {
   markerSize?: 'sm' | 'md' | 'lg';
   /** CSS color (hex, rgb(), etc). Defaults to Ije.config.theme.primaryColor, then a fallback purple. */
   markerColor?: string;
+  /** Geofences to draw around the device. One marked `emphasised` is the host's own choice (e.g.
+   *  the selected trigger's fence); with none marked, whichever fences contain the device are
+   *  emphasised instead -- which is what Live mode relies on, having no trigger selected. */
+  geofences?: IjeGeofenceOverlay[];
+  /** Whether the fences are drawn. They are kept either way, so toggling does not refetch. */
+  showGeofences?: boolean;
 }
 
 /** Ref handle for driving the underlying <ije-map-tracker> element imperatively, e.g.
@@ -57,11 +63,19 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
       markerShape,
       markerSize,
       markerColor,
+      geofences,
+      showGeofences,
     },
     forwardedRef
   ) {
     const ref = useRef<IjeMapTracker | null>(null);
     useImperativeHandle(forwardedRef, () => ref.current as IjeDeviceTrackerViewHandle, []);
+
+    // Fences go through the imperative API rather than an attribute: they are structured data,
+    // and serialising them into the DOM would re-parse the whole set on every render.
+    useEffect(() => {
+      ref.current?.setGeofences(geofences ?? []);
+    }, [geofences]);
 
     return (
       <ije-map-tracker
@@ -81,6 +95,7 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
         marker-shape={markerShape}
         marker-size={markerSize}
         marker-color={markerColor}
+        show-geofences={showGeofences ? '' : undefined}
       />
     );
   }
