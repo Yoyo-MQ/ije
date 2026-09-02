@@ -809,7 +809,16 @@ export class IjeMapTracker extends HTMLElement {
       this.updatePickerOverlay();
     }
 
-    if (this.events.length) await this.plotCurrentEvent();
+    if (this.events.length) {
+      await this.plotCurrentEvent();
+      return;
+    }
+
+    // A trigger with no recorded events would otherwise leave the map blank -- no trail, no
+    // marker, nothing under the "no events" overlay -- because plotCurrentEvent is what populates
+    // the device-location source in this mode. Fall back to the device's own history so the
+    // overlay sits over the route the device actually took, rather than over empty basemap.
+    await this.initHistoryMode();
   }
 
   private async stepEvent(delta: number) {
@@ -1018,6 +1027,10 @@ export class IjeMapTracker extends HTMLElement {
    *  frame" (the device may have data elsewhere); an unbounded recent-activity fetch coming back
    *  empty means the device has never reported at all. */
   private showEmptyStateOverlay(show: boolean, boundedWindow = false) {
+    // Event-picker mode has its own "no events" overlay, and since that mode now falls back to
+    // history for its map content, both would render as centred messages on top of each other.
+    // The picker's is the one that explains why the map is bare, so it wins.
+    if (show && this.isEventPickerMode()) return;
     if (!show) {
       this.emptyStateOverlay?.remove();
       this.emptyStateOverlay = null;
