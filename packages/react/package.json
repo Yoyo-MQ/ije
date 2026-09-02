@@ -1,11 +1,16 @@
 {
   "name": "@yoyomq/ije-react",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "source": "src/index.tsx",
-  "files": ["dist", "README.md"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node_modules/.bin/tsc"
   },
