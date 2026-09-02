@@ -69,6 +69,11 @@ export class IjeMapTracker extends HTMLElement {
   // nav row). History mode has no such panel, so an empty result was previously silent.
   private emptyStateOverlay: HTMLDivElement | null = null;
 
+  // Shown while the first telemetry fetch is in flight. Without it the map area is empty and
+  // indistinguishable from a broken one for the seconds the fetch takes, which reads as "nothing
+  // loaded" rather than "still loading".
+  private loadingOverlay: HTMLDivElement | null = null;
+
   // Guards an in-flight telemetry load (event-picker's plotCurrentEvent or history mode's
   // initHistoryMode) against a slower earlier load overwriting a newer one.
   private telemetryLoadToken = 0;
@@ -779,6 +784,9 @@ export class IjeMapTracker extends HTMLElement {
     this.ensurePickerOverlay();
     this.pickerLoading = true;
     this.updatePickerOverlay();
+    // The picker's own "Loading…" is a line of text in a small corner card; the map itself is
+    // still bare while the events load, so it gets the same overlay history mode uses.
+    this.showLoadingOverlay(true);
 
     this.triggerName = this.getAttribute('trigger-name') || '';
     const triggerId = Number(this.getAttribute('trigger-id'));
@@ -811,6 +819,7 @@ export class IjeMapTracker extends HTMLElement {
 
     if (this.events.length) {
       await this.plotCurrentEvent();
+      this.showLoadingOverlay(false);
       return;
     }
 
@@ -884,6 +893,7 @@ export class IjeMapTracker extends HTMLElement {
     this.telemetry = [];
     this.hasMoreOlderTelemetry = false;
     this.showEmptyStateOverlay(false);
+    this.showLoadingOverlay(true);
     const token = ++this.telemetryLoadToken;
 
     let telemetry: IjeTelemetryPoint[] = [];
@@ -903,10 +913,14 @@ export class IjeMapTracker extends HTMLElement {
       }
     } catch (err) {
       console.error('[Yoyo ije] Failed to load telemetry', err);
+      this.showLoadingOverlay(false);
       return;
     }
+    // A superseded load deliberately leaves the overlay up: the newer load that replaced it is
+    // still in flight and owns it, so clearing here would flash the map back to bare basemap.
     if (token !== this.telemetryLoadToken) return; // a newer window superseded this load
 
+    this.showLoadingOverlay(false);
     this.telemetry = telemetry;
     if (telemetry.length === 0) {
       this.showEmptyStateOverlay(true, isBoundedWindow);
@@ -1050,6 +1064,42 @@ export class IjeMapTracker extends HTMLElement {
 
     this.mapWrapper.appendChild(el);
     this.emptyStateOverlay = el;
+  }
+
+  /** Shows/hides the "loading" overlay covering the map while telemetry is being fetched. */
+  private showLoadingOverlay(show: boolean) {
+    if (!show) {
+      this.loadingOverlay?.remove();
+      this.loadingOverlay = null;
+      return;
+    }
+    if (this.loadingOverlay || !this.mapWrapper) return;
+
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'position:absolute', 'inset:0', 'z-index:10',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'pointer-events:none',
+    ].join(';');
+    el.innerHTML = `
+      <div style="
+        display:flex; align-items:center; gap:9px;
+        padding:10px 16px; border-radius:10px; font-family:sans-serif; font-size:13px;
+        font-weight:600; color:var(--yoyo-muted,#888);
+        background:color-mix(in srgb, var(--yoyo-card-bg, #fff) 97%, transparent);
+        box-shadow:0 2px 12px rgba(0,0,0,0.2);
+      ">
+        <span style="
+          width:13px; height:13px; flex-shrink:0; border-radius:50%;
+          border:2px solid var(--yoyo-border,#ddd);
+          border-top-color:${Ije.config?.theme?.primaryColor || '#8A2BE2'};
+          animation:ije-map-spin 0.7s linear infinite;
+        "></span>
+        Loading device data…
+      </div>`;
+
+    this.mapWrapper.appendChild(el);
+    this.loadingOverlay = el;
   }
 
   private ensurePickerOverlay() {
@@ -1372,6 +1422,7 @@ function injectLivePulseStyle() {
       display: inline-block; animation: ije-live-pulse 1.5s ease-in-out infinite;
     }
     @keyframes ije-live-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    @keyframes ije-map-spin { to { transform: rotate(360deg) } }
   `;
   document.head.appendChild(style);
 }
