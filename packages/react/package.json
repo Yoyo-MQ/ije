@@ -1,6 +1,6 @@
 {
   "name": "@yoyomq/ije-react",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "source": "src/index.tsx",
