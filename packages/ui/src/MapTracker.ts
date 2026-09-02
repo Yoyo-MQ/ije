@@ -1,6 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import { Ije, type IjeAggregatedEvent, type IjeTelemetryPoint, type IjeTelemetryPage } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
+import { geofencesToFeatureCollection, resolveEmphasisedGeofences, type IjeGeofenceOverlay } from './geofence';
 
 export class IjeMapTracker extends HTMLElement {
   // Comfortably covers a multi-hour live session at typical device send intervals (5-30s) while keeping
@@ -83,8 +84,14 @@ export class IjeMapTracker extends HTMLElement {
   private hasMoreOlderTelemetry = false;
   private isHydratingOlderTelemetry = false;
 
+  // Geofences drawn around the device, and whether the host currently wants them shown.
+  private geofences: IjeGeofenceOverlay[] = [];
+  private geofencesVisible = false;
+  // Last plotted device position, so emphasis can follow the device when no fence is explicitly selected.
+  private geofencePosition: { lng: number; lat: number } | null = null;
+
   static get observedAttributes() {
-    return ['device-id', 'title', 'help-message', 'marker-shape', 'marker-size', 'marker-color'];
+    return ['device-id', 'title', 'help-message', 'marker-shape', 'marker-size', 'marker-color', 'show-geofences'];
   }
 
   attributeChangedCallback(name: string, oldValue: string, newValue: string) {
@@ -95,10 +102,15 @@ export class IjeMapTracker extends HTMLElement {
     if (name === 'marker-shape' || name === 'marker-size' || name === 'marker-color') {
       this.applyMarkerStyle();
     }
+    if (name === 'show-geofences') {
+      this.geofencesVisible = newValue !== null;
+      this.applyGeofenceVisibility();
+    }
   }
 
   connectedCallback() {
     this.deviceId = this.getAttribute('device-id');
+    this.geofencesVisible = this.hasAttribute('show-geofences');
     
     // Ensure the host element has dimensions
     this.style.display = 'flex';
@@ -152,6 +164,10 @@ export class IjeMapTracker extends HTMLElement {
           'device-location': {
             type: 'geojson',
             data: { type: 'FeatureCollection', features: [] }
+          },
+          'device-geofence': {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
           }
         },
         layers: [
@@ -161,6 +177,30 @@ export class IjeMapTracker extends HTMLElement {
             source: 'osm',
             minzoom: 0,
             maxzoom: 19
+          },
+          // Directly above the basemap so a fence never covers the route or the marker.
+          // Both layers start hidden; show-geofences / setGeofencesVisible reveals them.
+          {
+            id: 'device-geofence-fill',
+            type: 'fill',
+            source: 'device-geofence',
+            layout: { visibility: 'none' },
+            paint: {
+              'fill-color': ['case', ['==', ['get', 'emphasis'], 'emphasised'], '#2563eb', '#94a3b8'],
+              'fill-opacity': ['case', ['==', ['get', 'emphasis'], 'emphasised'], 0.18, 0.07]
+            }
+          },
+          {
+            id: 'device-geofence-outline',
+            type: 'line',
+            source: 'device-geofence',
+            layout: { visibility: 'none', 'line-join': 'round' },
+            paint: {
+              'line-color': ['case', ['==', ['get', 'emphasis'], 'emphasised'], '#2563eb', '#94a3b8'],
+              'line-width': ['case', ['==', ['get', 'emphasis'], 'emphasised'], 2.5, 1.5],
+              'line-opacity': ['case', ['==', ['get', 'emphasis'], 'emphasised'], 0.95, 0.5],
+              'line-dasharray': [2, 1]
+            }
           },
           {
             id: 'device-trail',
@@ -240,6 +280,7 @@ export class IjeMapTracker extends HTMLElement {
     this.map.on('load', () => {
       this.mapStyleLoaded = true;
       this.applyMarkerStyle();
+      this.renderGeofences();
       this.setupMarkerClickHandler();
       // Only live mode has a genuinely "live" current position — event-picker/history mode's
       // "current" marker is a static window end point, so pulsing it would misleadingly suggest
@@ -432,6 +473,8 @@ export class IjeMapTracker extends HTMLElement {
       features
     });
     
+    this.updateGeofencePosition(lng, lat);
+
     // Automatically slowly pan the camera to follow the point
     this.map.flyTo({ center: [lng, lat], zoom: 16, speed: 0.8 });
 
@@ -885,6 +928,7 @@ export class IjeMapTracker extends HTMLElement {
       }
       // @ts-ignore - maplibre getSource types can be strict
       this.map!.getSource('device-location')?.setData({ type: 'FeatureCollection', features });
+      if (path.length) this.updateGeofencePosition(path[path.length - 1][0], path[path.length - 1][1]);
 
       if (path.length) {
         const bounds = path.reduce(
@@ -924,6 +968,7 @@ export class IjeMapTracker extends HTMLElement {
     ];
     // @ts-ignore - maplibre getSource types can be strict
     this.map.getSource('device-location')?.setData({ type: 'FeatureCollection', features });
+    this.updateGeofencePosition(current[0], current[1]);
 
     if (this.isHistoryMode() && clamped <= IjeMapTracker.HYDRATE_NEAR_EDGE_THRESHOLD) {
       void this.hydrateOlderTelemetryIfNeeded();
@@ -1101,6 +1146,62 @@ export class IjeMapTracker extends HTMLElement {
     nextBtn.disabled    = this.eventIndex >= total - 1;
     prevBtn.style.opacity = prevBtn.disabled ? '0.3' : '1';
     nextBtn.style.opacity = nextBtn.disabled ? '0.3' : '1';
+  }
+
+  // ─── Geofences ──────────────────────────────────────────────────────────────
+
+  /** Sets the fences drawn around the device. An overlay marked `emphasised` is the host's own
+   *  choice (Playback's selected trigger); with none marked, whichever fences contain the device
+   *  are emphasised instead, which is what Live mode relies on since it has no trigger selected. */
+  setGeofences(geofences: IjeGeofenceOverlay[]): void {
+    this.geofences = geofences ?? [];
+    this.renderGeofences();
+  }
+
+  /** Shows or hides the fences without discarding them, for a host-side toggle. */
+  setGeofencesVisible(visible: boolean): void {
+    this.geofencesVisible = visible;
+    this.applyGeofenceVisibility();
+  }
+
+  /** The fences currently containing the device, recomputed on every position update. */
+  getGeofencesContainingDevice(): IjeGeofenceOverlay[] {
+    if (!this.geofencePosition) return [];
+    return resolveEmphasisedGeofences(
+      this.geofences.map(({ emphasised: _ignored, ...geofence }) => geofence),
+      this.geofencePosition
+    ).filter((geofence) => geofence.emphasised);
+  }
+
+  /** Records where the device now is and re-emphasises the fences around it. */
+  private updateGeofencePosition(lng: number, lat: number): void {
+    const hasMoved = this.geofencePosition?.lng !== lng || this.geofencePosition?.lat !== lat;
+    this.geofencePosition = { lng, lat };
+    if (hasMoved && this.geofences.length > 0) this.renderGeofences();
+  }
+
+  private renderGeofences(): void {
+    if (!this.map || !this.mapStyleLoaded) return;
+    const resolved = resolveEmphasisedGeofences(this.geofences, this.geofencePosition);
+    // @ts-ignore - maplibre getSource types can be strict
+    this.map.getSource('device-geofence')?.setData(geofencesToFeatureCollection(resolved));
+    this.applyGeofenceVisibility();
+    this.dispatchEvent(
+      new CustomEvent('ije-geofence-status-changed', {
+        detail: {
+          geofenceCount: this.geofences.length,
+          containingGeofenceIds: resolved.filter((g) => g.emphasised).map((g) => g.id),
+        },
+      })
+    );
+  }
+
+  private applyGeofenceVisibility(): void {
+    if (!this.map || !this.mapStyleLoaded) return;
+    const visibility = this.geofencesVisible && this.geofences.length > 0 ? 'visible' : 'none';
+    for (const layerId of ['device-geofence-fill', 'device-geofence-outline']) {
+      if (this.map.getLayer(layerId)) this.map.setLayoutProperty(layerId, 'visibility', visibility);
+    }
   }
 }
 
