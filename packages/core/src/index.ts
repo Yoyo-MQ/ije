@@ -41,7 +41,7 @@ export interface SdkConfig {
   apiKey: string;
   /**
    * Organization UUID used to build MQTT subscription topics.
-   * Populated automatically by init() via GET /public/api/v1/context;
+   * Populated automatically by init() via GET /api/v1/context;
    * override only if you need to bypass that fetch.
    */
   organizationId?: string;
@@ -65,7 +65,7 @@ export class IjeSDK {
   public telemetry: IjeTelemetryClient;
   public http: IjeHttpClient;
   /**
-   * Server-resolved Whitelabelling entitlement (GET /public/api/v1/context). When true, widgets
+   * Server-resolved Whitelabelling entitlement (GET /api/v1/context). When true, widgets
    * omit the "Powered by Yoyo" footer (see branding.ts's createPoweredByYoyo()). Always starts
    * false and only flips on a successful, explicit true from the server — never settable by the
    * embedding app itself, since that would make the entitlement trivially fakeable.
@@ -116,7 +116,7 @@ export class IjeSDK {
     if (!this.config.organizationId) {
       try {
         const ctx = await this.http.get<{ organization_id: string; whitelabelling_enabled?: boolean }>(
-          '/public/api/v1/context'
+          '/api/v1/context'
         );
         if (ctx.organization_id) {
           this.config.organizationId = ctx.organization_id;

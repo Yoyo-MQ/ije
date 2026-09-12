@@ -107,19 +107,19 @@ export class IjeTelemetryClient {
   }
 
   listTriggers(params: { searchText?: string; limit?: number; offset?: number; deviceId?: number } = {}): Promise<IjeTriggersResponse> {
-    return this.http.get<IjeTriggersResponse>('/public/api/v1/triggers', {
+    return this.http.get<IjeTriggersResponse>('/api/v1/triggers', {
       params: { searchText: params.searchText, limit: params.limit, offset: params.offset, deviceId: params.deviceId },
     });
   }
 
   listDevices(params: { searchText?: string; limit?: number; offset?: number } = {}): Promise<IjeDevicesResponse> {
-    return this.http.get<IjeDevicesResponse>('/public/api/v1/devices', {
+    return this.http.get<IjeDevicesResponse>('/api/v1/devices', {
       params: { searchText: params.searchText, limit: params.limit, offset: params.offset },
     });
   }
 
   listAggregatedEvents(params: ListAggregatedEventsParams): Promise<IjeAggregatedEventsResponse> {
-    return this.http.get<IjeAggregatedEventsResponse>('/public/api/v1/aggregated_events', {
+    return this.http.get<IjeAggregatedEventsResponse>('/api/v1/aggregated_events', {
       params: {
         trigger_id: params.triggerId,
         starts_at: params.startsAt,
@@ -134,11 +134,11 @@ export class IjeTelemetryClient {
   }
 
   getAggregatedEvent(id: number): Promise<IjeAggregatedEventDetail> {
-    return this.http.get<IjeAggregatedEventDetail>(`/public/api/v1/aggregated_events/${id}`);
+    return this.http.get<IjeAggregatedEventDetail>(`/api/v1/aggregated_events/${id}`);
   }
 
   getDeviceData(params: GetDeviceDataParams): Promise<IjeDeviceDataResponse> {
-    return this.http.get<IjeDeviceDataResponse>('/public/api/v1/device_data', {
+    return this.http.get<IjeDeviceDataResponse>('/api/v1/device_data', {
       params: {
         partial_query_expression: params.partialQueryExpression,
         order: params.order,

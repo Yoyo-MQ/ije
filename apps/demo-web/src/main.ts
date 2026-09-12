@@ -621,7 +621,7 @@ async function connect(apiKey: string) {
     });
 
     // init() swallows /context errors internally, so an invalid key wouldn't otherwise throw here.
-    await Ije.http.get('/public/api/v1/context');
+    await Ije.http.get('/api/v1/context');
   } catch (err: any) {
     setStatus(`<span class="status-dot red"></span>Connection failed: ${err?.message ?? 'unknown error'}`);
     connectBtn.disabled = false;
