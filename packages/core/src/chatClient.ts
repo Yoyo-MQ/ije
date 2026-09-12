@@ -69,7 +69,7 @@ export class IjeChatClient {
   async ask(question: string): Promise<ChatResponse> {
     try {
       const data = await this.http.post<ChatResponse>(
-        '/api/v1/apigateway/mimir/insights/query',
+        '/apigateway/mimir/insights/query',
         { session_id: this.sessionId, question },
       );
       this.sessionId = data.session_id;
@@ -92,7 +92,7 @@ export class IjeChatClient {
   listConversations(
     params: { limit?: number; cursorLastActivityAt?: string; cursorSessionId?: string } = {},
   ): Promise<IjeConversationsResponse> {
-    return this.http.get<IjeConversationsResponse>('/api/v1/apigateway/mimir/conversations', {
+    return this.http.get<IjeConversationsResponse>('/apigateway/mimir/conversations', {
       params: {
         limit: params.limit,
         cursor_last_activity_at: params.cursorLastActivityAt,
@@ -104,7 +104,7 @@ export class IjeChatClient {
   /** Fetch a conversation session's full transcript, in turn order, with any rendered charts. */
   getConversation(sessionId: string): Promise<IjeConversationDetail> {
     return this.http.get<IjeConversationDetail>(
-      `/api/v1/apigateway/mimir/conversations/${encodeURIComponent(sessionId)}`,
+      `/apigateway/mimir/conversations/${encodeURIComponent(sessionId)}`,
     );
   }
 
