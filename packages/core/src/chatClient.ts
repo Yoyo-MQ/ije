@@ -2,6 +2,7 @@ import type { SdkConfig } from './index';
 import { IjeApiError, IjeHttpClient } from './httpClient';
 
 const AI_CREDITS_EXHAUSTED_CODE = 'AI_CREDITS_EXHAUSTED';
+const CONVERSATIONS_PATH = '/apigateway/mimir/conversations';
 
 export class AiCreditsExhaustedError extends Error {
   constructor(message: string) {
@@ -66,12 +67,22 @@ export class IjeChatClient {
     this.http._setConfig(config);
   }
 
-  async ask(question: string): Promise<ChatResponse> {
+  /** Starts a new conversation with its first question; attributorId names who it's asked on behalf of. */
+  async new(question: string, attributorId: string): Promise<ChatResponse> {
+    return this.postQuestion(CONVERSATIONS_PATH, question, attributorId);
+  }
+
+  /** Asks a follow-up in the conversation in progress; start one with new(), or point at an existing one with resumeSession(). */
+  async reply(question: string, attributorId: string): Promise<ChatResponse> {
+    if (!this.sessionId) {
+      throw new Error('[Yoyo ije] No conversation in progress: call Ije.chat.new() to start one, or resumeSession() to continue a past one.');
+    }
+    return this.postQuestion(`${CONVERSATIONS_PATH}/${encodeURIComponent(this.sessionId)}/messages`, question, attributorId);
+  }
+
+  private async postQuestion(path: string, question: string, attributorId: string): Promise<ChatResponse> {
     try {
-      const data = await this.http.post<ChatResponse>(
-        '/apigateway/mimir/insights/query',
-        { session_id: this.sessionId, question },
-      );
+      const data = await this.http.post<ChatResponse>(path, { question, attributor_id: attributorId });
       this.sessionId = data.session_id;
       return data;
     } catch (err) {
@@ -109,14 +120,14 @@ export class IjeChatClient {
   }
 
   /**
-   * Continue a past conversation: the next ask() call sends this session id. The server
+   * Continue a past conversation: the next reply() posts to this session id. The server
    * transparently rebuilds context from history if the session has expired server-side.
    */
   resumeSession(sessionId: string) {
     this.sessionId = sessionId;
   }
 
-  /** The session id the next ask() call will use, or null if no conversation is in progress. */
+  /** The session id reply() will post to, or null when no conversation is in progress. */
   get currentSessionId(): string | null {
     return this.sessionId;
   }

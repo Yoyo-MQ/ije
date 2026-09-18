@@ -17,8 +17,9 @@ import { Ije } from '@yoyomq/ije-core';
 
 await Ije.init({ apiKey: 'YOUR_YOYO_API_KEY', theme: { primaryColor: '#8A2BE2' } });
 
-// Natural-language insights
-const res = await Ije.chat.ask('How many devices reported in the last hour?');
+// Natural-language chat, asked on behalf of an attributor (who the assistant's actions are recorded against)
+const res = await Ije.chat.new('How many devices reported in the last hour?', 'user-123');
+const followUp = await Ije.chat.reply('Which of them were idle?', 'user-123');
 
 // Raw real-time streams (the UI widgets use these for you)
 Ije.mqtt.subscribe('device/truck-001/telemetry', (p) => console.log(p.speed));

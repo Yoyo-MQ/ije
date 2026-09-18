@@ -290,9 +290,24 @@ export class IjeChat extends HTMLElement {
   private popoverEl: HTMLDivElement | null = null;
   private popoverDismissHandler: ((evt: MouseEvent) => void) | null = null;
   private shellRendered = false;
+  private missingAttributorIdErrorEl: HTMLDivElement | null = null;
 
   static get observedAttributes() {
-    return ['title', 'placeholder', 'height'];
+    return ['title', 'placeholder', 'height', 'attributor-id'];
+  }
+
+  /** Who questions are asked on behalf of; required — without it the chat renders an error instead. */
+  get attributorId(): string {
+    return this.getAttribute('attributor-id') ?? '';
+  }
+
+  set attributorId(value: string) {
+    this.setAttribute('attributor-id', value);
+  }
+
+  attributeChangedCallback(attributeName: string, _previousValue: string | null, nextValue: string | null) {
+    if (attributeName !== 'attributor-id' || !nextValue || !this.isConnected || this.shellRendered) return;
+    this._renderChat();
   }
 
   /** URL templates per entity type, e.g. { devices: '/devices/{id}' }. A type with no entry falls
@@ -324,8 +339,32 @@ export class IjeChat extends HTMLElement {
       background:var(--yoyo-background,#fff);
     `;
     if (this.shellRendered) return;
+    if (!this.attributorId) {
+      this._renderMissingAttributorIdError();
+      return;
+    }
+    this._renderChat();
+  }
+
+  private _renderChat() {
+    this.missingAttributorIdErrorEl?.remove();
+    this.missingAttributorIdErrorEl = null;
     this.shellRendered = true;
     this._renderShell();
+  }
+
+  private _renderMissingAttributorIdError() {
+    if (this.missingAttributorIdErrorEl) return;
+    console.error('[Ije] <ije-chat> requires an attributor-id attribute naming who questions are asked on behalf of.');
+    const errorEl = document.createElement('div');
+    errorEl.setAttribute('role', 'alert');
+    errorEl.style.cssText = `
+      flex:1;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;
+      font-size:13px;line-height:1.6;color:var(--yoyo-foreground,inherit);
+    `;
+    errorEl.textContent = 'This chat can\'t start: it was set up without an attributor-id, so there\'s no one to record its actions against.';
+    this.appendChild(errorEl);
+    this.missingAttributorIdErrorEl = errorEl;
   }
 
   disconnectedCallback() {
@@ -595,17 +634,20 @@ export class IjeChat extends HTMLElement {
   }
 
   /** Asks the assistant a question programmatically, exactly as _handleSend does for typed input -
-   *  appends the user/assistant bubbles and manages loading state. No-ops while already loading or
-   *  given only whitespace. Useful for a contextual entry point that already knows what to ask. */
+   *  appends the user/assistant bubbles and manages loading state. No-ops while already loading,
+   *  given only whitespace, or when the chat never rendered (no attributor-id). Useful for a
+   *  contextual entry point that already knows what to ask. */
   async ask(question: string): Promise<void> {
     const trimmedQuestion = question.trim();
-    if (this.isLoading || !trimmedQuestion) return;
+    if (this.isLoading || !trimmedQuestion || !this.shellRendered) return;
 
     this._addMessage('user', trimmedQuestion);
     this._setLoading(true);
 
     try {
-      const response = await Ije.chat.ask(trimmedQuestion);
+      const response = Ije.chat.currentSessionId
+        ? await Ije.chat.reply(trimmedQuestion, this.attributorId)
+        : await Ije.chat.new(trimmedQuestion, this.attributorId);
       this._addMessage('assistant', response.answer, response.chart, response.entity_references);
       this.dispatchEvent(
         new CustomEvent('ije-conversation-updated', {
@@ -646,7 +688,7 @@ export class IjeChat extends HTMLElement {
   /**
    * Replace the visible conversation with a past transcript (e.g. from Ije.chat.getConversation()),
    * so the widget shows prior turns before the user continues asking questions. Pair with
-   * Ije.chat.resumeSession(sessionId) so the next ask() continues the same session server-side —
+   * Ije.chat.resumeSession(sessionId) so the next question continues the same session server-side —
    * this method only affects what's rendered, it does not call resumeSession() itself.
    */
   loadHistory(
