@@ -4,6 +4,8 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { IjeChat as IjeChatElement, ResourceLinkResolvers } from '@yoyomq/ije-ui';
 
 export interface IjeChatProps {
+  /** Who questions are asked on behalf of; required — without it the chat renders an error instead. */
+  attributorId: string;
   title?: string;
   placeholder?: string;
   width?: string;
@@ -20,7 +22,7 @@ export interface IjeChatProps {
 export type IjeChatHandle = IjeChatElement;
 
 export const IjeChat = forwardRef<IjeChatHandle, IjeChatProps>(function IjeChat(
-  { title, placeholder, width, height, resourceLinkResolvers },
+  { attributorId, title, placeholder, width, height, resourceLinkResolvers },
   forwardedRef
 ) {
   const ref = useRef<IjeChatElement | null>(null);
@@ -35,6 +37,7 @@ export const IjeChat = forwardRef<IjeChatHandle, IjeChatProps>(function IjeChat(
   return (
     <ije-chat
       ref={ref}
+      attributor-id={attributorId}
       title={title}
       placeholder={placeholder}
       width={width}

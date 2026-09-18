@@ -22,7 +22,7 @@ await Ije.init({ apiKey: 'YOUR_YOYO_API_KEY' });
 <ije-map-tracker   device-id="truck-001" height="500px"></ije-map-tracker>
 <ije-telemetry-stat  device-id="truck-001" metric="speed" unit="MPH"></ije-telemetry-stat>
 <ije-telemetry-chart device-id="truck-001" metric="speed" height="200px"></ije-telemetry-chart>
-<ije-chat></ije-chat>
+<ije-chat attributor-id="user-123"></ije-chat>
 ```
 
 ### Elements

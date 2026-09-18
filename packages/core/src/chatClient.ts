@@ -66,12 +66,13 @@ export class IjeChatClient {
     this.http._setConfig(config);
   }
 
-  async ask(question: string): Promise<ChatResponse> {
+  /** Starts a conversation, or asks a follow-up in the one in progress; attributorId names who it's asked on behalf of. */
+  async ask(question: string, attributorId: string): Promise<ChatResponse> {
+    const askPath = this.sessionId
+      ? `/apigateway/mimir/conversations/${encodeURIComponent(this.sessionId)}/messages`
+      : '/apigateway/mimir/conversations';
     try {
-      const data = await this.http.post<ChatResponse>(
-        '/apigateway/mimir/insights/query',
-        { session_id: this.sessionId, question },
-      );
+      const data = await this.http.post<ChatResponse>(askPath, { question, attributor_id: attributorId });
       this.sessionId = data.session_id;
       return data;
     } catch (err) {
