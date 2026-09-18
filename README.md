@@ -331,16 +331,18 @@ Everything hangs off the `Ije` singleton from `@yoyomq/ije-core`.
 
 ```ts
 // The second argument is the attributor id: who you're asking on behalf of (see <ije-chat>'s attributor-id).
-const res = await Ije.chat.ask('How many devices reported in the last hour?', 'user-123');
+const res = await Ije.chat.new('How many devices reported in the last hour?', 'user-123');
+// Follow up in that same conversation:
+const followUp = await Ije.chat.reply('Which of them were idle?', 'user-123');
 console.log(res.answer);    // string
 console.log(res.chart);     // optional ChatChartSpec
 console.log(res.entity_references); // EntityReference[] — devices/triggers/trips the answer mentions,
                              // resolved to links by <ije-chat> if you're using the widget;
                              // resolve them yourself here if you're driving the chat UI by hand
-Ije.chat.resetSession();  // start a fresh conversation
+Ije.chat.resetSession();  // forget the conversation in progress, so reply() has nothing to continue
 ```
 
-`ask()` throws if the SDK isn't initialized or the request fails.
+`new()` and `reply()` throw if the SDK isn't initialized or the request fails; `reply()` also throws when no conversation is in progress.
 
 ### Real-time data (MQTT)
 
