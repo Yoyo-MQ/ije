@@ -645,7 +645,9 @@ export class IjeChat extends HTMLElement {
     this._setLoading(true);
 
     try {
-      const response = await Ije.chat.ask(trimmedQuestion, this.attributorId);
+      const response = Ije.chat.currentSessionId
+        ? await Ije.chat.reply(trimmedQuestion, this.attributorId)
+        : await Ije.chat.new(trimmedQuestion, this.attributorId);
       this._addMessage('assistant', response.answer, response.chart, response.entity_references);
       this.dispatchEvent(
         new CustomEvent('ije-conversation-updated', {
@@ -686,7 +688,7 @@ export class IjeChat extends HTMLElement {
   /**
    * Replace the visible conversation with a past transcript (e.g. from Ije.chat.getConversation()),
    * so the widget shows prior turns before the user continues asking questions. Pair with
-   * Ije.chat.resumeSession(sessionId) so the next ask() continues the same session server-side —
+   * Ije.chat.resumeSession(sessionId) so the next question continues the same session server-side —
    * this method only affects what's rendered, it does not call resumeSession() itself.
    */
   loadHistory(
