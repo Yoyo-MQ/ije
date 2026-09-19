@@ -4,6 +4,7 @@ import { IjeTelemetryClient } from './telemetryClient';
 import { IjeHttpClient } from './httpClient';
 
 export type {
+  AiGeneratedProposalSummary,
   ChatChartSpec,
   ChatResponse,
   EntityReference,

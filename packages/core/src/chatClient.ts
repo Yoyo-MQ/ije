@@ -23,11 +23,26 @@ export type EntityReference =
   | { entity_type: 'devices' | 'triggers' | 'workflows'; id: string; label: string }
   | { entity_type: 'trips'; id: string; label: string; device_id: string };
 
+/**
+ * The display fields of one Yoyo AiGeneratedProposal (ADR 0015): staged for a human to confirm or
+ * reject, never auto-applied. Deliberately carries no tool-specific fields: summary_text is the one
+ * field every AiGeneratedProposal always has, regardless of which propose-tool created it.
+ * props_json is the escape hatch for a tool that needs structured display data beyond the plain
+ * sentence - each propose-tool defines its own shape for it; this type stays generic either way.
+ */
+export interface AiGeneratedProposalSummary {
+  proposal_id: string;
+  summary_text: string;
+  props_json?: Record<string, unknown>;
+  status_slug?: 'pending_confirmation' | 'confirmed' | 'rejected';
+}
+
 export interface ChatResponse {
   session_id: string;
   answer: string;
   chart?: ChatChartSpec;
   entity_references?: EntityReference[];
+  ai_generated_proposal_summaries?: AiGeneratedProposalSummary[];
 }
 
 /** One AI conversation session, as listed by IjeChatClient.listConversations(). */
@@ -50,6 +65,7 @@ export interface IjeConversationMessage {
   answer: string | null;
   chart?: ChatChartSpec;
   entity_references?: EntityReference[];
+  ai_generated_proposal_summaries?: AiGeneratedProposalSummary[];
   created_at: string;
   completed_at: string | null;
 }
@@ -112,10 +128,15 @@ export class IjeChatClient {
     });
   }
 
-  /** Fetch a conversation session's full transcript, in turn order, with any rendered charts. */
-  getConversation(sessionId: string): Promise<IjeConversationDetail> {
+  /**
+   * Fetch a conversation session's full transcript, in turn order, with any rendered charts and the
+   * live confirm/reject status of any proposals staged in it. attributorId is required: refreshing a
+   * proposal's status is itself an MCP tool call, which always needs an attributor.
+   */
+  getConversation(sessionId: string, attributorId: string): Promise<IjeConversationDetail> {
     return this.http.get<IjeConversationDetail>(
       `/apigateway/mimir/conversations/${encodeURIComponent(sessionId)}`,
+      { params: { attributor_id: attributorId } },
     );
   }
 
