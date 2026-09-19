@@ -2,6 +2,7 @@ import type { SdkConfig } from './index';
 import { IjeApiError, IjeHttpClient } from './httpClient';
 
 const AI_CREDITS_EXHAUSTED_CODE = 'AI_CREDITS_EXHAUSTED';
+const CONVERSATIONS_PATH = '/apigateway/mimir/conversations';
 
 export class AiCreditsExhaustedError extends Error {
   constructor(message: string) {
@@ -22,11 +23,26 @@ export type EntityReference =
   | { entity_type: 'devices' | 'triggers' | 'workflows'; id: string; label: string }
   | { entity_type: 'trips'; id: string; label: string; device_id: string };
 
+/**
+ * The display fields of one Yoyo AiGeneratedProposal (ADR 0015): staged for a human to confirm or
+ * reject, never auto-applied. Deliberately carries no tool-specific fields: summary_text is the one
+ * field every AiGeneratedProposal always has, regardless of which propose-tool created it.
+ * props_json is the escape hatch for a tool that needs structured display data beyond the plain
+ * sentence - each propose-tool defines its own shape for it; this type stays generic either way.
+ */
+export interface AiGeneratedProposalSummary {
+  proposal_id: string;
+  summary_text: string;
+  props_json?: Record<string, unknown>;
+  status_slug?: 'pending_confirmation' | 'confirmed' | 'rejected';
+}
+
 export interface ChatResponse {
   session_id: string;
   answer: string;
   chart?: ChatChartSpec;
   entity_references?: EntityReference[];
+  ai_generated_proposal_summaries?: AiGeneratedProposalSummary[];
 }
 
 /** One AI conversation session, as listed by IjeChatClient.listConversations(). */
@@ -49,6 +65,7 @@ export interface IjeConversationMessage {
   answer: string | null;
   chart?: ChatChartSpec;
   entity_references?: EntityReference[];
+  ai_generated_proposal_summaries?: AiGeneratedProposalSummary[];
   created_at: string;
   completed_at: string | null;
 }
@@ -66,12 +83,22 @@ export class IjeChatClient {
     this.http._setConfig(config);
   }
 
-  async ask(question: string): Promise<ChatResponse> {
+  /** Starts a new conversation with its first question; attributorId names who it's asked on behalf of. */
+  async new(question: string, attributorId: string): Promise<ChatResponse> {
+    return this.postQuestion(CONVERSATIONS_PATH, question, attributorId);
+  }
+
+  /** Asks a follow-up in the conversation in progress; start one with new(), or point at an existing one with resumeSession(). */
+  async reply(question: string, attributorId: string): Promise<ChatResponse> {
+    if (!this.sessionId) {
+      throw new Error('[Yoyo ije] No conversation in progress: call Ije.chat.new() to start one, or resumeSession() to continue a past one.');
+    }
+    return this.postQuestion(`${CONVERSATIONS_PATH}/${encodeURIComponent(this.sessionId)}/messages`, question, attributorId);
+  }
+
+  private async postQuestion(path: string, question: string, attributorId: string): Promise<ChatResponse> {
     try {
-      const data = await this.http.post<ChatResponse>(
-        '/apigateway/mimir/insights/query',
-        { session_id: this.sessionId, question },
-      );
+      const data = await this.http.post<ChatResponse>(path, { question, attributor_id: attributorId });
       this.sessionId = data.session_id;
       return data;
     } catch (err) {
@@ -101,22 +128,27 @@ export class IjeChatClient {
     });
   }
 
-  /** Fetch a conversation session's full transcript, in turn order, with any rendered charts. */
-  getConversation(sessionId: string): Promise<IjeConversationDetail> {
+  /**
+   * Fetch a conversation session's full transcript, in turn order, with any rendered charts and the
+   * live confirm/reject status of any proposals staged in it. attributorId is required: refreshing a
+   * proposal's status is itself an MCP tool call, which always needs an attributor.
+   */
+  getConversation(sessionId: string, attributorId: string): Promise<IjeConversationDetail> {
     return this.http.get<IjeConversationDetail>(
       `/apigateway/mimir/conversations/${encodeURIComponent(sessionId)}`,
+      { params: { attributor_id: attributorId } },
     );
   }
 
   /**
-   * Continue a past conversation: the next ask() call sends this session id. The server
+   * Continue a past conversation: the next reply() posts to this session id. The server
    * transparently rebuilds context from history if the session has expired server-side.
    */
   resumeSession(sessionId: string) {
     this.sessionId = sessionId;
   }
 
-  /** The session id the next ask() call will use, or null if no conversation is in progress. */
+  /** The session id reply() will post to, or null when no conversation is in progress. */
   get currentSessionId(): string | null {
     return this.sessionId;
   }
