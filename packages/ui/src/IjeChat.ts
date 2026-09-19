@@ -1,4 +1,4 @@
-import type { ChatChartSpec, EntityReference } from '@yoyomq/ije-core';
+import type { AiGeneratedProposalSummary, ChatChartSpec, EntityReference } from '@yoyomq/ije-core';
 import { AiCreditsExhaustedError, Ije } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 
@@ -276,6 +276,16 @@ function buildChartElement(spec: ChatChartSpec, primaryColor: string): HTMLEleme
   return wrapper;
 }
 
+function buildAiGeneratedProposalResolvedBadge(statusSlug: 'confirmed' | 'rejected'): HTMLElement {
+  const badge = document.createElement('div');
+  badge.textContent = statusSlug === 'confirmed' ? 'Confirmed' : 'Rejected';
+  badge.style.cssText =
+    statusSlug === 'confirmed'
+      ? 'display:inline-block;padding:6px 10px;border-radius:8px;font-size:12px;font-weight:600;color:#15803d;background:#f0fdf4;border:1px solid #bbf7d0;'
+      : 'display:inline-block;padding:6px 10px;border-radius:8px;font-size:12px;font-weight:600;color:#71717a;background:var(--yoyo-card-bg,#f4f4f5);border:1px solid var(--yoyo-border,#e4e4e7);';
+  return badge;
+}
+
 // ─── Web Component ────────────────────────────────────────────────────────────
 
 export class IjeChat extends HTMLElement {
@@ -497,6 +507,7 @@ export class IjeChat extends HTMLElement {
     text: string,
     chart?: ChatChartSpec,
     entities?: EntityReference[],
+    aiGeneratedProposalSummaries?: AiGeneratedProposalSummary[],
   ) {
     if (!this.messagesEl) return;
     const primaryColor = Ije.config?.theme?.primaryColor || '#8A2BE2';
@@ -530,11 +541,111 @@ export class IjeChat extends HTMLElement {
       if (chart) {
         bubble.appendChild(buildChartElement(chart, primaryColor));
       }
+      for (const aiGeneratedProposalSummary of aiGeneratedProposalSummaries ?? []) {
+        bubble.appendChild(this._buildAiGeneratedProposalElement(aiGeneratedProposalSummary, primaryColor));
+      }
     }
 
     row.appendChild(bubble);
     this.messagesEl.appendChild(row);
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /** Builds one AiGeneratedProposal card: a summary plus either live Confirm/Reject actions or an
+   *  already-resolved badge, keyed by data-ije-proposal-id for resolveProposal() to find later. */
+  private _buildAiGeneratedProposalElement(aiGeneratedProposalSummary: AiGeneratedProposalSummary, primaryColor: string): HTMLElement {
+    const card = document.createElement('div');
+    card.dataset.ijeProposalId = aiGeneratedProposalSummary.proposal_id;
+    card.style.cssText = 'margin-top:10px;border:1px solid var(--yoyo-border,#e4e4e7);border-radius:10px;padding:10px 12px;';
+
+    const label = document.createElement('div');
+    label.textContent = 'Proposed action';
+    label.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#71717a;margin-bottom:6px;';
+    card.appendChild(label);
+
+    const summaryEl = document.createElement('div');
+    summaryEl.textContent = aiGeneratedProposalSummary.summary_text;
+    summaryEl.style.cssText = 'font-size:13px;line-height:1.5;color:var(--yoyo-foreground,inherit);margin-bottom:8px;';
+    card.appendChild(summaryEl);
+
+    const statusContainer = document.createElement('div');
+    statusContainer.dataset.ijeProposalStatus = 'true';
+    card.appendChild(statusContainer);
+
+    this._renderAiGeneratedProposalStatus(statusContainer, aiGeneratedProposalSummary.proposal_id, aiGeneratedProposalSummary.status_slug, primaryColor);
+    return card;
+  }
+
+  /** (Re)renders a proposal card's status area: a resolved badge for confirmed/rejected, otherwise
+   *  live Confirm/Reject buttons (with an optional error line above them, for a failed submission). */
+  private _renderAiGeneratedProposalStatus(
+    container: HTMLElement,
+    proposalId: string,
+    statusSlug: AiGeneratedProposalSummary['status_slug'] | undefined,
+    primaryColor: string,
+    errorMessage?: string,
+  ) {
+    container.innerHTML = '';
+
+    if (statusSlug === 'confirmed' || statusSlug === 'rejected') {
+      container.appendChild(buildAiGeneratedProposalResolvedBadge(statusSlug));
+      return;
+    }
+
+    if (errorMessage) {
+      const errorLine = document.createElement('div');
+      errorLine.textContent = errorMessage;
+      errorLine.style.cssText = 'font-size:11.5px;color:#b91c1c;margin-bottom:6px;';
+      container.appendChild(errorLine);
+    }
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.textContent = 'Confirm';
+    confirmBtn.style.cssText = `flex:1;padding:7px 10px;border-radius:8px;border:none;cursor:pointer;background:${primaryColor};color:#fff;font-size:12.5px;font-weight:600;font-family:inherit;`;
+    confirmBtn.addEventListener('click', () => this._decideAiGeneratedProposal(container, proposalId, 'confirmed'));
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.textContent = 'Reject';
+    rejectBtn.style.cssText = 'flex:1;padding:7px 10px;border-radius:8px;border:1px solid var(--yoyo-border,#e4e4e7);background:transparent;color:var(--yoyo-muted,#888);cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;';
+    rejectBtn.addEventListener('click', () => this._decideAiGeneratedProposal(container, proposalId, 'rejected'));
+
+    actions.appendChild(confirmBtn);
+    actions.appendChild(rejectBtn);
+    container.appendChild(actions);
+  }
+
+  /** Shows a local "Submitting…" state immediately (no host round-trip needed for that part), then
+   *  hands the actual decision off to the host app via ije-proposal-decision - Ije has no JWT
+   *  session to call the confirm/reject endpoint itself. The host calls resolveProposal() once its
+   *  own request lands. */
+  private _decideAiGeneratedProposal(container: HTMLElement, proposalId: string, decision: 'confirmed' | 'rejected') {
+    container.innerHTML = '';
+    const submitting = document.createElement('div');
+    submitting.textContent = 'Submitting…';
+    submitting.style.cssText = 'font-size:12px;color:var(--yoyo-muted,#888);';
+    container.appendChild(submitting);
+
+    this.dispatchEvent(new CustomEvent('ije-proposal-decision', { detail: { proposalId, decision }, bubbles: true }));
+  }
+
+  /** Updates an already-rendered proposal card once the host app's own confirm/reject call lands -
+   *  the only "mutate a past message" capability in Ije today, deliberately narrow to proposal cards.
+   *  'failed' re-renders live Confirm/Reject buttons with message shown above them, so the user can retry. */
+  resolveProposal(proposalId: string, outcome: 'confirmed' | 'rejected' | 'failed', message?: string) {
+    if (!this.messagesEl) return;
+    const card = this.messagesEl.querySelector<HTMLElement>(`[data-ije-proposal-id="${CSS.escape(proposalId)}"]`);
+    const statusContainer = card?.querySelector<HTMLElement>('[data-ije-proposal-status]');
+    if (!card || !statusContainer) return;
+
+    const primaryColor = Ije.config?.theme?.primaryColor || '#8A2BE2';
+    if (outcome === 'failed') {
+      this._renderAiGeneratedProposalStatus(statusContainer, proposalId, undefined, primaryColor, message ?? 'Something went wrong. Please try again.');
+      return;
+    }
+    this._renderAiGeneratedProposalStatus(statusContainer, proposalId, outcome, primaryColor);
   }
 
   /** Delegated click handler for entity spans rendered by linkifyEntities. Resolved entities
@@ -648,7 +759,7 @@ export class IjeChat extends HTMLElement {
       const response = Ije.chat.currentSessionId
         ? await Ije.chat.reply(trimmedQuestion, this.attributorId)
         : await Ije.chat.new(trimmedQuestion, this.attributorId);
-      this._addMessage('assistant', response.answer, response.chart, response.entity_references);
+      this._addMessage('assistant', response.answer, response.chart, response.entity_references, response.ai_generated_proposal_summaries);
       this.dispatchEvent(
         new CustomEvent('ije-conversation-updated', {
           detail: { sessionId: response.session_id },
@@ -697,6 +808,7 @@ export class IjeChat extends HTMLElement {
       answer: string | null;
       chart?: ChatChartSpec;
       entity_references?: EntityReference[];
+      ai_generated_proposal_summaries?: AiGeneratedProposalSummary[];
     }>,
   ) {
     if (!this.messagesEl) return;
@@ -705,7 +817,7 @@ export class IjeChat extends HTMLElement {
     for (const message of messages) {
       this._addMessage('user', message.question);
       if (message.answer) {
-        this._addMessage('assistant', message.answer, message.chart, message.entity_references);
+        this._addMessage('assistant', message.answer, message.chart, message.entity_references, message.ai_generated_proposal_summaries);
       }
     }
   }
