@@ -428,6 +428,64 @@ fleetChatEl.addEventListener('ije-entity-navigate', (e) => {
   }
 });
 
+// ─── Proposal decisions from AI Chat → the public AiGeneratedProposal routes ───────────────────────
+// Ije never makes this call itself - the host app decides how to execute a confirmed proposal. This
+// demo has no user JWT (only the YOYO_API_KEY pasted into Connect), so it uses the public equivalent
+// of confirm/reject/get (same /api/v1 router Ije.http already targets), authenticated the same way
+// plus the X-Yoyo-Attributor-Id header identifying who is deciding. A real JWT-authenticated host app
+// (yoyo-frontend) instead uses its own session client against the plain JWT-only /api routes.
+interface DemoAiGeneratedProposal {
+  id: string;
+  target_method: string;
+  target_path: string;
+  resolved_body_json: Record<string, unknown>;
+}
+
+async function publicProposalApiCall<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const attributorId = document.getElementById('fleet-chat')?.getAttribute('attributor-id') ?? '';
+  const response = await fetch(`${import.meta.env.VITE_API_URL as string}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      YOYO_API_KEY: tokenInput.value.trim(),
+      'X-Yoyo-Attributor-Id': attributorId,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) throw new Error(`${method} ${path} failed: ${response.status}`);
+  return response.status === 204 ? (undefined as T) : response.json();
+}
+
+fleetChatEl.addEventListener('ije-proposal-decision', (e) => {
+  const decisionEvent = e as CustomEvent<{ proposalId: string; decision: 'confirmed' | 'rejected' }>;
+  const { proposalId, decision } = decisionEvent.detail;
+  const chat = fleetChatEl as unknown as { resolveProposal: (id: string, outcome: 'confirmed' | 'rejected' | 'failed', message?: string) => void };
+
+  void (async () => {
+    try {
+      if (decision === 'rejected') {
+        await publicProposalApiCall('POST', `/ai_generated_proposals/${proposalId}/rejections`);
+        chat.resolveProposal(proposalId, 'rejected');
+        return;
+      }
+
+      const { proposal } = await publicProposalApiCall<{ proposal: DemoAiGeneratedProposal }>('GET', `/ai_generated_proposals/${proposalId}`);
+      try {
+        await publicProposalApiCall(proposal.target_method, proposal.target_path, proposal.resolved_body_json);
+        await publicProposalApiCall('POST', `/ai_generated_proposals/${proposalId}/confirmations`, { status_slug: 'COMPLETED' });
+        chat.resolveProposal(proposalId, 'confirmed');
+      } catch (executionError: any) {
+        const failureMessage = executionError?.message ?? 'The action could not be completed.';
+        await publicProposalApiCall('POST', `/ai_generated_proposals/${proposalId}/confirmations`, { status_slug: 'FAILED', failure_message: failureMessage });
+        chat.resolveProposal(proposalId, 'failed', failureMessage);
+      }
+    } catch (err) {
+      console.error('[Demo] Failed to record proposal decision:', err);
+      chat.resolveProposal(proposalId, 'failed', 'Something went wrong. Please try again.');
+    }
+  })();
+});
+
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 
 function setStatus(html: string) { statusEl.innerHTML = html; }
@@ -561,7 +619,8 @@ async function showConversationTranscript(sessionId: string) {
   historyTranscriptEl.innerHTML = '<div class="history-loading">Loading transcript…</div>';
 
   try {
-    const { messages } = await Ije.chat.getConversation(sessionId);
+    const attributorId = document.getElementById('fleet-chat')?.getAttribute('attributor-id') ?? '';
+    const { messages } = await Ije.chat.getConversation(sessionId, attributorId);
     historyTranscriptEl.innerHTML = '';
 
     for (const message of messages) {

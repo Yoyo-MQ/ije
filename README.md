@@ -74,7 +74,7 @@ await Ije.init({
 <ije-telemetry-chart device-id="truck-001" metric="speed"   title="Speed"    height="200px"></ije-telemetry-chart>
 
 <!-- Natural-language fleet assistant -->
-<ije-chat title="Fleet Assistant" height="520px"></ije-chat>
+<ije-chat attributor-id="user-123" title="Fleet Assistant" height="520px"></ije-chat>
 ```
 
 Calling `Ije.init()` opens the real-time MQTT connection and any `<ije-*>` widget
@@ -198,19 +198,20 @@ Plots a rolling window (last 100 points) of one metric over time (uPlot).
 
 ### `<ije-chat>` — fleet assistant
 
-A chat UI that sends questions to the Yoyo insights API and renders the answer,
+A chat UI that sends questions to the Yoyo chat API and renders the answer,
 including any returned chart (bar/line/pie/scatter/table) and any entity references
 (devices, triggers, trips) the answer mentions.
 
 | Attribute | Description |
 |-----------|-------------|
+| `attributor-id` | **Required.** Who questions are asked on behalf of: your yoyo user id, or any stable id for the person from your own system. Every action the assistant takes is recorded against it. Without it the widget shows an error instead of the chat. Equivalent to setting the `.attributorId` property. |
 | `title` | Header title (default `Fleet Assistant`) |
 | `placeholder` | Input placeholder |
 | `width` / `height` | CSS size (default `100%` × `520px`) |
 | `resource-link-resolvers` | JSON string mapping entity type → URL template. Equivalent to setting the `.resourceLinkResolvers` property. See [Entity links](#entity-links-in-chat-responses) below. |
 
 ```html
-<ije-chat title="Fleet Assistant" placeholder="Ask about your fleet…" height="520px"></ije-chat>
+<ije-chat attributor-id="user-123" title="Fleet Assistant" placeholder="Ask about your fleet…" height="520px"></ije-chat>
 ```
 
 #### Entity links in chat responses
@@ -234,7 +235,7 @@ real pages for some of these, tell `<ije-chat>` how to link to them:
 or, with no build step, as a JSON attribute:
 
 ```html
-<ije-chat resource-link-resolvers='{"devices":"/devices/{id}","triggers":"/triggers/{id}"}'></ije-chat>
+<ije-chat attributor-id="user-123" resource-link-resolvers='{"devices":"/devices/{id}","triggers":"/triggers/{id}"}'></ije-chat>
 ```
 
 **Template placeholders.** `{field}` is replaced with the matching field from the
@@ -329,16 +330,19 @@ Everything hangs off the `Ije` singleton from `@yoyomq/ije-core`.
 ### Chat
 
 ```ts
-const res = await Ije.chat.ask('How many devices reported in the last hour?');
+// The second argument is the attributor id: who you're asking on behalf of (see <ije-chat>'s attributor-id).
+const res = await Ije.chat.new('How many devices reported in the last hour?', 'user-123');
+// Follow up in that same conversation:
+const followUp = await Ije.chat.reply('Which of them were idle?', 'user-123');
 console.log(res.answer);    // string
 console.log(res.chart);     // optional ChatChartSpec
 console.log(res.entity_references); // EntityReference[] — devices/triggers/trips the answer mentions,
                              // resolved to links by <ije-chat> if you're using the widget;
                              // resolve them yourself here if you're driving the chat UI by hand
-Ije.chat.resetSession();  // start a fresh conversation
+Ije.chat.resetSession();  // forget the conversation in progress, so reply() has nothing to continue
 ```
 
-`ask()` throws if the SDK isn't initialized or the request fails.
+`new()` and `reply()` throw if the SDK isn't initialized or the request fails; `reply()` also throws when no conversation is in progress.
 
 ### Real-time data (MQTT)
 
@@ -406,7 +410,7 @@ function FleetAssistantPanel() {
   // Or listen for the same ije-entity-navigate event documented above.
   chatRef.current?.addEventListener('ije-entity-navigate', (e) => { /* ... */ });
 
-  return <IjeChat ref={chatRef} />;
+  return <IjeChat ref={chatRef} attributorId={currentUser.id} />;
 }
 ```
 

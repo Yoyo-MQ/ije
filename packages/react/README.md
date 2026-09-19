@@ -175,11 +175,12 @@ const data: BarChartData[] = [
 AI-powered fleet assistant chat widget.
 
 ```tsx
-<IjeChat title="Fleet Assistant" placeholder="Ask about your fleet…" />
+<IjeChat attributorId={currentUser.id} title="Fleet Assistant" placeholder="Ask about your fleet…" />
 ```
 
 | Prop | Type | Description |
 |------|------|-------------|
+| `attributorId` | `string` | **Required.** Who questions are asked on behalf of; every action the assistant takes is recorded against it. Without it the widget shows an error instead of the chat. |
 | `title` | `string` | Widget title |
 | `placeholder` | `string` | Input placeholder text |
 | `width` | `string` | CSS width |
