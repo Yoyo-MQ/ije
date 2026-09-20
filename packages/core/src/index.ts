@@ -90,7 +90,7 @@ export class IjeSDK {
   public async init(config: SdkConfig): Promise<void> {
     if (this.isInitialized) {
       if (this.config?.apiKey === config.apiKey) {
-        console.warn('[Yoyo ije] SDK is already initialized');
+        if (config.debug) console.warn('[Yoyo ije] SDK is already initialized');
         return;
       }
       // Re-initializing with a different API key (e.g. correcting one that was invalid) — drop
@@ -129,7 +129,7 @@ export class IjeSDK {
           }
         }
       } catch {
-        console.warn('[Yoyo ije] Could not resolve organization ID; live tracking topic may not match');
+        if (this.config.debug) console.warn('[Yoyo ije] Could not resolve organization ID; live tracking topic may not match');
       }
     }
 
@@ -150,7 +150,7 @@ export class IjeSDK {
     }
 
     this.isInitialized = true;
-    console.log('[Yoyo ije] SDK initialized');
+    if (this.config.debug) console.log('[Yoyo ije] SDK initialized');
   }
 }
 
