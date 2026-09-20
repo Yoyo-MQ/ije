@@ -563,7 +563,7 @@ export class IjeMapTracker extends HTMLElement {
       if (this.map?.isStyleLoaded()) apply();
       else this.map?.once('load', apply);
     } catch (err) {
-      console.warn('[Yoyo ije] Failed to seed last position:', err);
+      if (Ije.config?.debug) console.warn('[Yoyo ije] Failed to seed last position:', err);
     }
   }
 
