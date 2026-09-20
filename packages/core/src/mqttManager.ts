@@ -101,7 +101,7 @@ export class IjeMqttManager {
     });
 
     client.on('error', err => console.error('[Yoyo ije] MQTT error:', err.message));
-    client.on('offline', () => console.warn('[Yoyo ije] MQTT offline — will retry'));
+    client.on('offline', () => { if (this.debug) console.warn('[Yoyo ije] MQTT offline — will retry'); });
   }
 
   disconnect(): void {
@@ -137,10 +137,10 @@ export class IjeMqttManager {
       if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
         return obj as Record<string, any>;
       }
-      console.warn('[Yoyo ije] Ignoring non-object MQTT payload');
+      if (this.debug) console.warn('[Yoyo ije] Ignoring non-object MQTT payload');
       return null;
     } catch {
-      console.warn('[Yoyo ije] Ignoring malformed MQTT payload');
+      if (this.debug) console.warn('[Yoyo ije] Ignoring malformed MQTT payload');
       return null;
     }
   }
