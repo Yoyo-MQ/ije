@@ -84,7 +84,7 @@ export class IjeMqttManager {
     this.client = client;
 
     client.on('connect', () => {
-      console.log(`[Yoyo ije] MQTT connected (${url})`);
+      if (this.debug) console.log(`[Yoyo ije] MQTT connected (${url})`);
       // (Re)subscribe to every topic a component has registered interest in.
       // Covers both the initial connect and any reconnect after a drop.
       for (const topic of this.subscriptions.keys()) {

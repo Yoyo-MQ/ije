@@ -150,7 +150,7 @@ export class IjeSDK {
     }
 
     this.isInitialized = true;
-    console.log('[Yoyo ije] SDK initialized');
+    if (this.config.debug) console.log('[Yoyo ije] SDK initialized');
   }
 }
 
