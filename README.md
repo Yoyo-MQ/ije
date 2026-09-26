@@ -155,7 +155,9 @@ auto-panning to follow the device (MapLibre + OpenStreetMap tiles).
 
 | Attribute | Description |
 |-----------|-------------|
-| `device-id` | Device to track (required) |
+| `device-id` | Device to track |
+| `device-ids` | Several devices, comma separated, in place of `device-id` |
+| `feed` | `mqtt` (default) or `host`: positions come only from `ingestDeviceMessage()` |
 | `title` | Optional header title |
 | `help-message` | Optional tooltip shown next to the title |
 | `width` / `height` | CSS size (default `100%` × `400px`) |
@@ -163,6 +165,56 @@ auto-panning to follow the device (MapLibre + OpenStreetMap tiles).
 ```html
 <ije-map-tracker device-id="truck-001" title="Vehicle Location" height="500px"></ije-map-tracker>
 ```
+
+#### Several devices
+
+With `device-ids`, live mode follows every listed device, each with its own trail and marker,
+and picks up devices added to or removed from the list. The camera fits all devices when one
+first appears, until the user pans or zooms. History mode draws one route per device, and
+`setPointIndex(i)` places every device where it was at the moment of point `i`, hiding devices
+that had not reported yet. Start markers and the telemetry bar are shown only for one device.
+
+```js
+const tracker = document.querySelector('ije-map-tracker');
+tracker.setDeviceAppearances([
+  { deviceId: 12, label: 'Scout 1', colour: '#22c55e' },
+  { deviceId: 15, label: 'Relay', colour: '#3b82f6' },
+]);
+tracker.fitToDevices();
+// Cancel the event to replace the built-in popup with your own panel.
+tracker.addEventListener('ije-device-click', (event) => console.log(event.detail.deviceId));
+// With feed="host": the same handling as an MQTT message for that device.
+tracker.ingestDeviceMessage(12, { lat: -1.29, lng: 36.82, heading: 90 });
+```
+
+#### Fleet views
+
+For an operations map, the tracker also takes the context devices work in, and hands the host
+what it needs to anchor its own panels.
+
+| Attribute | Description |
+|-----------|-------------|
+| `basemap` | `streets` (default, OpenStreetMap), or Esri's muted `dark` / `light` canvas |
+| `marker-shape` | Also `arrow`, a plain heading arrow |
+| `hide-live-badge` | Hides LIVE, e.g. while the host feeds simulated positions |
+
+| Method | Description |
+|--------|-------------|
+| `setDeviceAppearances(…)` | Also takes `emphasis`: `selected` (white ring, filled label) or `warning` (amber ring and label) |
+| `setOverlays({ areas, routes, places })` | Areas `{ id, outline, colour, lineStyle, label? }`, routes `{ id, path, colour, lineStyle }`, places `{ id, kind, position, label, colour?, badge? }` where `kind` is `alert` (haloed, with an optional badge such as "Critical") or `station` (a dock or depot). `lineStyle` is `solid` or `dashed`. Positions are `{ lat, lng }` |
+| `fitToDevices(padding?, maximumZoom?)` | `padding` in pixels, or `{ top, right, bottom, left }` to keep devices clear of host panels |
+| `zoomIn()` / `zoomOut()` | |
+| `project({ lat, lng })` | Pixel position within the map, for anchoring a host panel to a device |
+
+| Event | Detail |
+|-------|--------|
+| `ije-device-click` | `{ deviceId }`; cancel it to suppress the built-in popup |
+| `ije-map-click` | A click that landed on no device |
+| `ije-view-change` | Every pan or zoom frame; re-project host panels here |
+
+In React, `IjeDeviceTrackerView` takes these as props (`deviceIds`, `feed`, `basemap`,
+`overlays`, `deviceAppearances`, `hideLiveBadge`, `onDeviceClick`, `onMapClick`,
+`onViewChange`), and its ref is the element.
 
 ### `<ije-telemetry-stat>` — single live metric
 

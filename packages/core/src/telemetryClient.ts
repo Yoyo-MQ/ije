@@ -247,8 +247,10 @@ export class IjeTelemetryClient {
 }
 
 /** One telemetry point: coordinate plus when it was recorded and how fast, for a Timeline
- *  Bar's scrubber labels. `speedKmh` is null when the row carries no speed field. */
+ *  Bar's scrubber labels. `speedKmh` is null when the row carries no speed field. `deviceId`
+ *  says which device reported it, since one fetch can cover several devices. */
 export interface IjeTelemetryPoint {
+  deviceId: number;
   lng: number;
   lat: number;
   timestampMs: number;
@@ -274,5 +276,5 @@ function extractTelemetryPoint(row: IjeDeviceDataPoint): IjeTelemetryPoint | nul
   if (!Number.isFinite(timestampMs)) return null;
 
   const speed = Number(data.speed ?? data.Speed);
-  return { lng, lat, timestampMs, speedKmh: Number.isFinite(speed) ? speed : null };
+  return { deviceId: row.device_id, lng, lat, timestampMs, speedKmh: Number.isFinite(speed) ? speed : null };
 }

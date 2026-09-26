@@ -3,3 +3,7 @@ packages:
   - 'apps/*'
 allowBuilds:
   esbuild: true
+# Every package asks for typescript "latest", which now resolves to 7 (the native compiler).
+# vite-plugin-dts needs the JavaScript compiler API that 7 no longer ships, so the ui build fails.
+overrides:
+  typescript: ^6.0.3
