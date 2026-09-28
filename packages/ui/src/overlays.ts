@@ -31,17 +31,26 @@ export interface IjeMapRoute {
 }
 
 /** `alert`: something needing attention, drawn with a halo. `station`: a fixed base such as a dock or depot. */
-export type IjeMapPlaceKind = 'alert' | 'station';
+export type IjeMapPlaceKind = 'alert' | 'station' | 'waypoint';
+
+/** Where a waypoint stands in its route: already reached, the one being flown to, or still ahead. */
+export type IjeMapWaypointProgress = 'reached' | 'next' | 'upcoming';
 
 export interface IjeMapPlace {
   id: string;
+  /** `waypoint`: one numbered stop on a route, a numbered circle with its label as a quiet note. */
   kind: IjeMapPlaceKind;
   position: IjeMapPosition;
+  /** A waypoint's note beside its circle, e.g. its altitude; empty for none. */
   label: string;
-  /** An alert's halo and tag dot. Stations are drawn neutral. */
+  /** An alert's halo and tag dot, or a waypoint's circle. Stations are drawn neutral. */
   colour?: string;
   /** Short uppercase badge after an alert's label, e.g. "Critical". */
   badge?: string;
+  /** A waypoint's number in its route, shown in its circle. */
+  sequenceNumber?: number;
+  /** A waypoint's progress: reached ones fill, the next one grows. Defaults to upcoming. */
+  progress?: IjeMapWaypointProgress;
 }
 
 export interface IjeMapOverlays {

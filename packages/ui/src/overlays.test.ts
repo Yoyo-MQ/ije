@@ -36,8 +36,7 @@ describe('routesToFeatureCollection', () => {
       { id: 'point', path: SQUARE.slice(0, 1), colour: '#f00', lineStyle: 'solid' },
     ]);
     expect(collection.features.map((feature) => feature.properties!.overlayId)).toEqual(['route']);
-  });
-});
+  });});
 
 describe('alertPlacesToFeatureCollection', () => {
   it('draws halos for alerts only, with a default colour when none is given', () => {

@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { uncoveredCentreOffset } from './camera';
+import { uncoveredCentreOffset, uncoveredFitPadding } from './camera';
+
+describe('uncoveredFitPadding', () => {
+  it('adds the margin to every edge a panel covers, and to the bare ones', () => {
+    expect(uncoveredFitPadding({ top: 56, right: 0, bottom: 200, left: 300 }, 48)).toEqual({
+      top: 104,
+      right: 48,
+      bottom: 248,
+      left: 348,
+    });
+  });
+});
 
 describe('uncoveredCentreOffset', () => {
   it('leaves the centre alone when nothing covers the map', () => {

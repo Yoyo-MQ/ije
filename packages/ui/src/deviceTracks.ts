@@ -171,3 +171,18 @@ export function readCoordinate(payload: Record<string, any>): LngLat | null {
   if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return null;
   return [lng, lat];
 }
+
+/**
+ * A trail from positions a host already has, oldest first, built as a live trail is: positions
+ * that aren't on the map are skipped and a position repeated while standing still is kept once.
+ */
+export function trailFromPositions(positions: { lat: number; lng: number }[]): LngLat[] {
+  const trail: LngLat[] = [];
+  for (const position of positions) {
+    const coordinate = readCoordinate(position);
+    if (!coordinate) continue;
+    const latest = trail[trail.length - 1];
+    if (!latest || latest[0] !== coordinate[0] || latest[1] !== coordinate[1]) trail.push(coordinate);
+  }
+  return trail;
+}

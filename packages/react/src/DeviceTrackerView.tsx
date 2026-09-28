@@ -6,6 +6,7 @@ import type {
   IjeGeofenceOverlay,
   IjeMapBasemap,
   IjeMapOverlays,
+  IjeMapPosition,
   IjeMapTracker,
   IjeMapTrackerDeviceAppearance,
 } from '@yoyomq/ije-ui';
@@ -24,8 +25,8 @@ export interface IjeDeviceTrackerViewProps {
   /** A device marker was clicked. Return `false` to suppress the built-in popup, e.g. when the
    *  host shows its own device panel instead. */
   onDeviceClick?: (deviceId: string) => boolean | void;
-  /** A click on the map that did not land on a device. */
-  onMapClick?: () => void;
+  /** A click on the map that did not land on a device, with where it landed. */
+  onMapClick?: (position: IjeMapPosition) => void;
   /** Fires on every pan and zoom frame, so a host panel can stay anchored with the handle's project(). */
   onViewChange?: () => void;
   /** 'streets' (default, OpenStreetMap), or a muted 'dark' or 'light' map that lets devices stand out. */
@@ -34,6 +35,13 @@ export interface IjeDeviceTrackerViewProps {
   overlays?: IjeMapOverlays;
   /** Hides the LIVE badge, e.g. while the host is feeding simulated positions. */
   hideLiveBadge?: boolean;
+  /** Hides the single-device bar of payload fields, for a host that shows its own readings. */
+  hideTelemetryBar?: boolean;
+  /** Draws only each device's marker, no trail: for a host replaying a recording that draws its own path. */
+  hideTrail?: boolean;
+  /** Draws each device above the places (waypoints, stations), which otherwise cover a device
+   *  passing over them. Meant for a few devices: each becomes an HTML marker. */
+  deviceMarkersOnTop?: boolean;
   title?: string;
   helpMessage?: string;
   width?: string;
@@ -87,6 +95,9 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
       basemap,
       overlays,
       hideLiveBadge,
+      hideTelemetryBar,
+      hideTrail,
+      deviceMarkersOnTop,
       title,
       helpMessage,
       width,
@@ -137,7 +148,7 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
     useEffect(() => {
       const element = ref.current;
       if (!element) return;
-      const handleMapClick = () => onMapClick?.();
+      const handleMapClick = (event: Event) => onMapClick?.((event as CustomEvent<IjeMapPosition>).detail);
       const handleViewChange = () => onViewChange?.();
       element.addEventListener('ije-map-click', handleMapClick);
       element.addEventListener('ije-view-change', handleViewChange);
@@ -155,6 +166,9 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
         feed={feed}
         basemap={basemap}
         hide-live-badge={hideLiveBadge ? '' : undefined}
+        hide-telemetry-bar={hideTelemetryBar ? '' : undefined}
+        hide-trail={hideTrail ? '' : undefined}
+        device-markers-on-top={deviceMarkersOnTop ? '' : undefined}
         title={title}
         help-message={helpMessage}
         width={width}

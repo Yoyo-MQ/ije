@@ -9,6 +9,7 @@ import {
   parseDeviceIdList,
   readCoordinate,
   readHeadingDegrees,
+  trailFromPositions,
   type DeviceTrack,
   type IjeMapTrackerDeviceAppearance,
 } from './deviceTracks';
@@ -152,5 +153,21 @@ describe('readHeadingDegrees', () => {
   it('reads the first heading field present, and null when there is none', () => {
     expect(readHeadingDegrees({ course: 45 })).toBe(45);
     expect(readHeadingDegrees({ speed: 3 })).toBeNull();
+  });
+});
+
+describe('trailFromPositions', () => {
+  it('builds a trail as a live one is: no impossible positions, and standing still kept once', () => {
+    expect(
+      trailFromPositions([
+        { lat: 43.59, lng: -79.65 },
+        { lat: 43.59, lng: -79.65 },
+        { lat: 45836623.6, lng: 45836623.6 },
+        { lat: 43.591, lng: -79.65 },
+      ])
+    ).toEqual([
+      [-79.65, 43.59],
+      [-79.65, 43.591],
+    ]);
   });
 });

@@ -185,6 +185,9 @@ tracker.fitToDevices();
 tracker.addEventListener('ije-device-click', (event) => console.log(event.detail.deviceId));
 // With feed="host": the same handling as an MQTT message for that device.
 tracker.ingestDeviceMessage(12, { lat: -1.29, lng: 36.82, heading: 90 });
+// Replaying a recording: the whole trail up to the playhead, drawn exactly as a live trail, so
+// scrubbing back shortens it. The last position's message carries the heading.
+tracker.setDeviceTrail(12, [{ lat: -1.29, lng: 36.82 }, { lat: -1.291, lng: 36.821 }], { heading: 90 });
 ```
 
 #### Fleet views
@@ -197,11 +200,14 @@ what it needs to anchor its own panels.
 | `basemap` | `streets` (default, OpenStreetMap), or Esri's muted `dark` / `light` canvas |
 | `marker-shape` | Also `arrow`, a plain heading arrow |
 | `hide-live-badge` | Hides LIVE, e.g. while the host feeds simulated positions |
+| `hide-telemetry-bar` | Hides the single-device bar of payload fields, for a host showing its own readings |
+| `hide-trail` | Draws only each device's marker, no trail |
+| `device-markers-on-top` | Draws each device above places (waypoints, stations), which otherwise cover a device passing over them. Each device becomes an HTML marker, so keep it to a few devices |
 
 | Method | Description |
 |--------|-------------|
 | `setDeviceAppearances(…)` | Also takes `emphasis`: `selected` (white ring, filled label) or `warning` (amber ring and label) |
-| `setOverlays({ areas, routes, places })` | Areas `{ id, outline, colour, lineStyle, label? }`, routes `{ id, path, colour, lineStyle }`, places `{ id, kind, position, label, colour?, badge? }` where `kind` is `alert` (haloed, with an optional badge such as "Critical") or `station` (a dock or depot). `lineStyle` is `solid` or `dashed`. Positions are `{ lat, lng }` |
+| `setOverlays({ areas, routes, places })` | Areas `{ id, outline, colour, lineStyle, label? }`, routes `{ id, path, colour, lineStyle }`, places `{ id, kind, position, label, colour?, badge?, sequenceNumber?, progress? }` where `kind` is `alert` (haloed, with an optional badge such as "Critical"), `station` (a dock or depot) or `waypoint` (a numbered circle, its `label` a quiet note beside it; `progress` is `reached` (filled), `next` (larger, with pulsing amber rings) or `upcoming`). `lineStyle` is `solid` or `dashed`. Positions are `{ lat, lng }` |
 | `fitToDevices(padding?, maximumZoom?)` | `padding` in pixels, or `{ top, right, bottom, left }` to keep devices clear of host panels |
 | `zoomIn()` / `zoomOut()` | |
 | `project({ lat, lng })` | Pixel position within the map, for anchoring a host panel to a device |

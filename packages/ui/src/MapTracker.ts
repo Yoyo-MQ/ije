@@ -1,7 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import { Ije, type IjeAggregatedEvent, type IjeTelemetryPoint, type IjeTelemetryPage } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
-import { uncoveredCentreOffset, type IjeCoveredEdges } from './camera';
+import { uncoveredCentreOffset, uncoveredFitPadding, type IjeCoveredEdges } from './camera';
 import { geofencesToFeatureCollection, resolveEmphasisedGeofences, type IjeGeofenceOverlay } from './geofence';
 import {
   buildTrackFeatureCollection,
@@ -11,6 +11,7 @@ import {
   parseDeviceIdList,
   readCoordinate,
   readHeadingDegrees,
+  trailFromPositions,
   type DeviceTrack,
   type IjeMapTrackerDeviceAppearance,
   type LngLat,
@@ -44,6 +45,14 @@ const TAG_BACKGROUND = 'rgba(32,35,44,.94)';
 const TAG_BORDER = '#353946';
 const TAG_TEXT = '#E7EBEF';
 const STATION_ICON_COLOUR = '#A4ACB7';
+const DEFAULT_WAYPOINT_COLOUR = '#7C3BED';
+const WAYPOINT_RADIUS_PIXELS = 11;
+const WAYPOINT_NEXT_RADIUS_PIXELS = 13;
+const NOTHING_COVERED: IjeCoveredEdges = { top: 0, right: 0, bottom: 0, left: 0 };
+/** Keeps fitted points off the map's edge. */
+const FIT_MARGIN_PIXELS = 48;
+/** Close enough to see a small field's waypoints apart, not so close the basemap runs out of detail. */
+const FIT_TO_POSITIONS_MAXIMUM_ZOOM = 18;
 
 /** Live mode's state for one followed device. */
 interface LiveDevice {
@@ -52,6 +61,8 @@ interface LiveDevice {
   startCoordinate: LngLat | null;
   headingDegrees: number | null;
   lastPayload: Record<string, any> | null;
+  // Set by setDeviceTrail: the host holds the whole recording, so it isn't trimmed to a live length.
+  keepsWholeTrail: boolean;
   topic: string | null;
   // One handler per device, so its MQTT subscription can be dropped on its own.
   handleMessage: (payload: Record<string, any>) => void;
@@ -103,7 +114,8 @@ export class IjeMapTracker extends HTMLElement {
   // Live mode: every device in `device-ids` (or the single `device-id`), keyed by id.
   private liveDevices = new Map<string, LiveDevice>();
   private organizationId: string | null = null;
-  // A fleet map keeps every device in view until the user pans or zooms it themselves.
+  // The camera follows the device(s) until a person or the host moves it: a fleet map keeps every
+  // device in view, a single-device map keeps its device centred.
   private userHasMovedCamera = false;
   private fitPadding: number | maplibregl.PaddingOptions = 60;
   private fitMaximumZoom = 16;
@@ -112,6 +124,8 @@ export class IjeMapTracker extends HTMLElement {
   // change can redraw without refetching.
   private drawnTracks: DeviceTrack[] = [];
   private labelMarkers = new Map<string, maplibregl.Marker>();
+  // With device-markers-on-top: each device's marker as HTML, so it stacks above the place markers.
+  private onTopDeviceMarkers = new Map<string, maplibregl.Marker>();
   private registeredMarkerIconIds = new Set<string>();
   private markerPopup: maplibregl.Popup | null = null;
   private popupDeviceId: string | null = null;
@@ -171,7 +185,10 @@ export class IjeMapTracker extends HTMLElement {
   private geofencePosition: { lng: number; lat: number } | null = null;
 
   static get observedAttributes() {
-    return ['device-id', 'device-ids', 'title', 'help-message', 'marker-shape', 'marker-size', 'marker-color', 'show-geofences', 'basemap'];
+    return [
+      'device-id', 'device-ids', 'title', 'help-message', 'marker-shape', 'marker-size', 'marker-color',
+      'show-geofences', 'basemap', 'device-markers-on-top',
+    ];
   }
 
   attributeChangedCallback(name: string, oldValue: string, newValue: string) {
@@ -184,7 +201,7 @@ export class IjeMapTracker extends HTMLElement {
     if (name === 'title' || name === 'help-message') {
       this.renderHeader();
     }
-    if (name === 'marker-shape' || name === 'marker-size' || name === 'marker-color') {
+    if (name === 'marker-shape' || name === 'marker-size' || name === 'marker-color' || name === 'device-markers-on-top') {
       this.applyMarkerStyle();
     }
     if (name === 'show-geofences') {
@@ -490,6 +507,10 @@ export class IjeMapTracker extends HTMLElement {
     this.map.on('dragstart', noteUserCameraMove);
     this.map.on('zoomstart', noteUserCameraMove);
     this.map.on('rotatestart', noteUserCameraMove);
+    // While the camera eases after a device, a wheel zoom joins that move and fires no zoomstart.
+    this.map.on('wheel', () => {
+      this.userHasMovedCamera = true;
+    });
 
     // A click that lands on no device, e.g. for a host to close its own device panel.
     this.map.on('click', (event) => {
@@ -498,7 +519,11 @@ export class IjeMapTracker extends HTMLElement {
         (layerId) => this.map!.getLayer(layerId) && this.map!.getLayoutProperty(layerId, 'visibility') !== 'none'
       );
       const hitsDevice = deviceLayers.length > 0 && this.map.queryRenderedFeatures(event.point, { layers: deviceLayers }).length > 0;
-      if (!hitsDevice) this.dispatchEvent(new CustomEvent('ije-map-click', { bubbles: true, composed: true }));
+      if (!hitsDevice) {
+        // Where the click landed, for a host placing points on the map.
+        const detail: IjeMapPosition = { lat: event.lngLat.lat, lng: event.lngLat.lng };
+        this.dispatchEvent(new CustomEvent<IjeMapPosition>('ije-map-click', { detail, bubbles: true, composed: true }));
+      }
     });
     // Every pan and zoom frame, so a host can keep its own overlays anchored with project().
     this.map.on('move', () => this.dispatchEvent(new CustomEvent('ije-view-change')));
@@ -526,6 +551,7 @@ export class IjeMapTracker extends HTMLElement {
     this.markerPopup?.remove();
     for (const marker of this.labelMarkers.values()) marker.remove();
     this.labelMarkers.clear();
+    this.removeOnTopDeviceMarkers();
     for (const marker of this.overlayTagMarkers) marker.remove();
     this.overlayTagMarkers = [];
     this.map?.remove();
@@ -631,7 +657,7 @@ export class IjeMapTracker extends HTMLElement {
     const latest = device.trail[device.trail.length - 1];
     if (!latest || latest[0] !== lng || latest[1] !== lat) device.trail.push(coordinate);
     // Keeps memory, and the GeoJSON re-uploaded on every update, bounded over a multi-hour shift.
-    if (device.trail.length > IjeMapTracker.MAX_TRAIL_POINTS) device.trail.shift();
+    if (!device.keepsWholeTrail && device.trail.length > IjeMapTracker.MAX_TRAIL_POINTS) device.trail.shift();
 
     if (this.popupDeviceId === deviceId && this.markerPopup?.isOpen()) {
       this.markerPopup.setLngLat(coordinate);
@@ -642,9 +668,14 @@ export class IjeMapTracker extends HTMLElement {
     if (!this.map) return;
 
     if (this.liveDevices.size === 1) {
-      // One device: the camera follows it and the bar shows its fields, as it always has.
+      // One device: the camera jumps to it once, then keeps it centred at whatever zoom the user
+      // chose. A fast feed restarting an animation on every message keeps the camera moving for
+      // good: clicks land off target, and tiles never settle so the style's 'load' never fires.
+      // So the first position jumps rather than flying from the initial centre, and following
+      // waits for the previous move to finish.
       this.updateGeofencePosition(lng, lat);
-      this.map.flyTo({ center: coordinate, zoom: 16, speed: 0.8 });
+      if (isFirstPosition) this.map.jumpTo({ center: coordinate, zoom: 16 });
+      else if (!this.userHasMovedCamera && !this.map.isMoving()) this.map.easeTo({ center: coordinate, duration: 300 });
       this.updateTelemetryBar(payload);
     } else if (isFirstPosition && !this.userHasMovedCamera) {
       // Refit only when a device first appears; refitting on every message would keep the
@@ -671,7 +702,8 @@ export class IjeMapTracker extends HTMLElement {
 
   private initLiveMode(): void {
     // The bar lists one device's payload fields; with several devices there is no single payload.
-    if (this.getDeviceIdList().length === 1) this.renderTelemetryBar();
+    // A host showing its own readings hides it, so they aren't shown twice.
+    if (this.getDeviceIdList().length === 1 && !this.hasAttribute('hide-telemetry-bar')) this.renderTelemetryBar();
     // A host showing simulated positions hides it, so the map never claims to be live when it isn't.
     if (!this.hasAttribute('hide-live-badge')) this.renderLiveBadge();
     this.syncLiveDevices();
@@ -703,6 +735,7 @@ export class IjeMapTracker extends HTMLElement {
         startCoordinate: null,
         headingDegrees: null,
         lastPayload: null,
+        keepsWholeTrail: false,
         topic: null,
         handleMessage: (payload) => this.handleLocationUpdate(deviceId, payload),
       };
@@ -737,15 +770,42 @@ export class IjeMapTracker extends HTMLElement {
     this.handleLocationUpdate(String(deviceId), payload);
   }
 
+  /**
+   * Replaces a followed device's trail with `positions`, oldest first, its marker at the last one:
+   * for a host replaying a recording, whose playhead also moves backwards, which feeding positions
+   * one at a time can't show. The trail is drawn exactly as a live one. `latestPayload` is the
+   * last position's message (heading and so on), as ingestDeviceMessage takes it. The whole trail
+   * is kept, not trimmed to a live trail's length, since the host already holds all of it.
+   */
+  setDeviceTrail(deviceId: string | number, positions: IjeMapPosition[], latestPayload: Record<string, any> = {}): void {
+    const device = this.liveDevices.get(String(deviceId));
+    if (!device) return;
+    const trail = trailFromPositions(positions);
+    device.keepsWholeTrail = true;
+    const latest = trail.pop();
+    device.trail = trail;
+    device.startCoordinate = trail[0] ?? latest ?? null;
+    if (!latest) {
+      this.renderLiveTracks();
+      return;
+    }
+    // The last position goes through the same path as a live message: camera, popup, telemetry bar.
+    this.handleLocationUpdate(String(deviceId), { ...latestPayload, lng: latest[0], lat: latest[1] });
+  }
+
   private renderLiveTracks(): void {
+    // A host replaying a recording moves the marker back and forth and draws the path itself; a
+    // trail of the positions it was given would scribble over it.
+    const isTrailHidden = this.hasAttribute('hide-trail');
     const tracks: DeviceTrack[] = [];
     for (const device of this.liveDevices.values()) {
       if (device.trail.length === 0) continue;
+      const currentCoordinate = device.trail[device.trail.length - 1];
       tracks.push({
         deviceId: device.deviceId,
-        trail: device.trail,
-        startCoordinate: device.startCoordinate,
-        currentCoordinate: device.trail[device.trail.length - 1],
+        trail: isTrailHidden ? [currentCoordinate] : device.trail,
+        startCoordinate: isTrailHidden ? null : device.startCoordinate,
+        currentCoordinate,
         headingDegrees: device.headingDegrees,
       });
     }
@@ -768,6 +828,70 @@ export class IjeMapTracker extends HTMLElement {
     );
     (this.map.getSource('device-location') as maplibregl.GeoJSONSource | undefined)?.setData(featureCollection);
     this.renderDeviceLabels();
+    this.renderOnTopDeviceMarkers();
+  }
+
+  /**
+   * Place markers (waypoints, stations, tags) are HTML, which always stacks above the map canvas,
+   * so a canvas-drawn device passing over one is hidden under it. With `device-markers-on-top`
+   * each device is drawn as HTML too, above them. Opt-in: a fleet of hundreds stays on the canvas.
+   */
+  private drawsDeviceMarkersOnTop(): boolean {
+    return this.hasAttribute('device-markers-on-top');
+  }
+
+  private renderOnTopDeviceMarkers(): void {
+    if (!this.map || !this.drawsDeviceMarkersOnTop()) return;
+    const rotates = MARKER_ROTATING_SHAPES.has(this.getAttribute('marker-shape') || 'circle');
+    const shownDeviceIds = new Set<string>();
+    for (const track of this.drawnTracks) {
+      if (!track.currentCoordinate) continue;
+      shownDeviceIds.add(track.deviceId);
+      let marker = this.onTopDeviceMarkers.get(track.deviceId);
+      if (!marker) {
+        marker = new maplibregl.Marker({ element: this.buildOnTopDeviceMarkerElement(track.deviceId), rotationAlignment: 'map' })
+          .setLngLat(track.currentCoordinate)
+          .addTo(this.map);
+        this.onTopDeviceMarkers.set(track.deviceId, marker);
+      }
+      marker.setLngLat(track.currentCoordinate);
+      marker.setRotation(rotates ? (track.headingDegrees ?? 0) : 0);
+    }
+    for (const [deviceId, marker] of this.onTopDeviceMarkers) {
+      if (shownDeviceIds.has(deviceId)) continue;
+      marker.remove();
+      this.onTopDeviceMarkers.delete(deviceId);
+    }
+  }
+
+  /** The same icon the canvas layer draws, for one device's colour, and clickable like it. */
+  private buildOnTopDeviceMarkerElement(deviceId: string): HTMLElement {
+    const shape = this.getAttribute('marker-shape') || 'circle';
+    const colour =
+      this.deviceAppearances.get(deviceId)?.colour ||
+      this.getAttribute('marker-color') ||
+      Ije.config?.theme?.primaryColor ||
+      '#8A2BE2';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'ije-map-tracker-device-on-top';
+    const imageData = renderMarkerShapeIcon(shape, colour, this.markerRadiusPx());
+    if (imageData) {
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+      canvas.getContext('2d')?.putImageData(imageData, 0, 0);
+    }
+    canvas.addEventListener('click', (event) => {
+      // Handled here, so the map doesn't also take it as a click on empty map (ije-map-click).
+      event.stopPropagation();
+      const coordinate = this.drawnTracks.find((track) => track.deviceId === deviceId)?.currentCoordinate;
+      if (coordinate) this.handleDeviceMarkerClick(deviceId, coordinate);
+    });
+    return canvas;
+  }
+
+  private removeOnTopDeviceMarkers(): void {
+    for (const marker of this.onTopDeviceMarkers.values()) marker.remove();
+    this.onTopDeviceMarkers.clear();
   }
 
   /** Labels are HTML beside each marker: the map style has no glyphs, so a symbol layer can't draw text. */
@@ -848,11 +972,37 @@ export class IjeMapTracker extends HTMLElement {
   /** Moves `position` to the middle of the part of the map the host's panels leave uncovered,
    *  keeping the zoom; for bringing a device into view beside or above a panel about it. */
   centerOn(position: IjeMapPosition, covered: IjeCoveredEdges): void {
+    this.stopFollowing();
     this.map?.easeTo({
       center: [position.lng, position.lat],
       offset: uncoveredCentreOffset(covered),
       duration: 600,
     });
+  }
+
+  /** Fits `positions`, e.g. a host's planned zone and waypoints, into the part of the map its panels
+   *  leave uncovered. One position is centred at the current zoom; none does nothing. */
+  fitTo(positions: IjeMapPosition[], covered: IjeCoveredEdges = NOTHING_COVERED): void {
+    if (!this.map || positions.length === 0) return;
+    this.stopFollowing();
+    if (positions.length === 1) {
+      this.centerOn(positions[0], covered);
+      return;
+    }
+    const bounds = positions.reduce(
+      (accumulated, position) => accumulated.extend([position.lng, position.lat]),
+      new maplibregl.LngLatBounds([positions[0].lng, positions[0].lat], [positions[0].lng, positions[0].lat])
+    );
+    this.map.fitBounds(bounds, {
+      padding: uncoveredFitPadding(covered, FIT_MARGIN_PIXELS),
+      maxZoom: FIT_TO_POSITIONS_MAXIMUM_ZOOM,
+      duration: 600,
+    });
+  }
+
+  /** Leaves the camera where it is as devices move, e.g. while a host has the user placing points. */
+  stopFollowing(): void {
+    this.userHasMovedCamera = true;
   }
 
   /** Pixel position of `position` within the map, for anchoring a host's own panel to a device. */
@@ -928,6 +1078,7 @@ export class IjeMapTracker extends HTMLElement {
       // Clear of the halo, which is 15 px in radius.
       return new maplibregl.Marker({ element: tag, anchor: 'left', offset: [24, 0] }).setLngLat(position);
     }
+    if (place.kind === 'waypoint') return buildWaypointMarker(place).setLngLat(position);
     const element = document.createElement('div');
     element.className = 'ije-map-tracker-station';
     const box = document.createElement('span');
@@ -1025,15 +1176,7 @@ export class IjeMapTracker extends HTMLElement {
       this.map.on('click', layerId, (e) => {
         const clickedDeviceId = e.features?.[0]?.properties?.deviceId;
         if (clickedDeviceId === undefined || clickedDeviceId === null) return;
-        const deviceId = String(clickedDeviceId);
-        // Cancelable, so a host with its own device panel can replace the popup.
-        const showsPopup = this.dispatchEvent(new CustomEvent<IjeDeviceClickDetail>('ije-device-click', {
-          detail: { deviceId },
-          cancelable: true,
-          bubbles: true,
-          composed: true,
-        }));
-        if (showsPopup) this.openDevicePopup(deviceId, [e.lngLat.lng, e.lngLat.lat]);
+        this.handleDeviceMarkerClick(String(clickedDeviceId), [e.lngLat.lng, e.lngLat.lat]);
       });
       this.map.on('mouseenter', layerId, () => {
         if (this.map) this.map.getCanvas().style.cursor = 'pointer';
@@ -1042,6 +1185,17 @@ export class IjeMapTracker extends HTMLElement {
         if (this.map) this.map.getCanvas().style.cursor = '';
       });
     }
+  }
+
+  private handleDeviceMarkerClick(deviceId: string, clickedCoordinate: LngLat): void {
+    // Cancelable, so a host with its own device panel can replace the popup.
+    const showsPopup = this.dispatchEvent(new CustomEvent<IjeDeviceClickDetail>('ije-device-click', {
+      detail: { deviceId },
+      cancelable: true,
+      bubbles: true,
+      composed: true,
+    }));
+    if (showsPopup) this.openDevicePopup(deviceId, clickedCoordinate);
   }
 
   private openDevicePopup(deviceId: string, clickedCoordinate: LngLat): void {
@@ -1108,6 +1262,20 @@ export class IjeMapTracker extends HTMLElement {
     }
 
     this.updateMarkerIconImages(isCircle ? null : shape, color, radius);
+
+    // Drawn as HTML instead (renderOnTopDeviceMarkers): the canvas marker and its rings are hidden,
+    // and the HTML markers rebuilt so they take the new shape, size and colours.
+    const isOnTop = this.drawsDeviceMarkersOnTop();
+    if (isOnTop) {
+      for (const layerId of ['device-current-marker', 'device-current-marker-halo', 'device-current-marker-icon']) {
+        if (this.map.getLayer(layerId)) this.map.setLayoutProperty(layerId, 'visibility', 'none');
+      }
+    }
+    if (this.map.getLayer('device-emphasis-ring')) {
+      this.map.setLayoutProperty('device-emphasis-ring', 'visibility', isOnTop ? 'none' : 'visible');
+    }
+    this.removeOnTopDeviceMarkers();
+    this.renderOnTopDeviceMarkers();
   }
 
   /** (Re)registers one symbol icon per colour in use: marker-color plus each device's own colour.
@@ -1919,6 +2087,37 @@ function injectLivePulseStyle() {
 }
 
 /** A rounded tag with a colour dot, e.g. an area's name or an alert with its badge. */
+/** A route's stop: a numbered circle, filled once reached, ringed while ahead, larger when it is next. */
+function buildWaypointMarker(place: IjeMapPlace): maplibregl.Marker {
+  const colour = place.colour ?? DEFAULT_WAYPOINT_COLOUR;
+  const progress = place.progress ?? 'upcoming';
+  const element = document.createElement('div');
+  element.className = 'ije-map-tracker-waypoint';
+  const circle = document.createElement('span');
+  circle.className = `ije-map-tracker-waypoint-circle ije-map-tracker-waypoint-${progress}`;
+  circle.style.setProperty('--ije-waypoint-colour', colour);
+  circle.textContent = place.sequenceNumber === undefined ? '' : String(place.sequenceNumber);
+  if (progress === 'next') {
+    // Two rings, half a cycle apart, so one is always spreading out from the waypoint being flown to.
+    for (const ringClassName of ['ije-map-tracker-waypoint-ring', 'ije-map-tracker-waypoint-ring ije-map-tracker-waypoint-ring-later']) {
+      const ring = document.createElement('span');
+      ring.className = ringClassName;
+      ring.setAttribute('aria-hidden', 'true');
+      circle.append(ring);
+    }
+  }
+  element.append(circle);
+  if (place.label) {
+    const note = document.createElement('span');
+    note.className = 'ije-map-tracker-waypoint-note';
+    note.textContent = place.label;
+    element.append(note);
+  }
+  // Anchored on the circle's centre, so the note trails off to the right of the point.
+  const circleRadiusPixels = progress === 'next' ? WAYPOINT_NEXT_RADIUS_PIXELS : WAYPOINT_RADIUS_PIXELS;
+  return new maplibregl.Marker({ element, anchor: 'left', offset: [-circleRadiusPixels, 0] });
+}
+
 function buildOverlayTag(label: string, colour: string, badge?: string): HTMLElement {
   const tag = document.createElement('div');
   tag.className = 'ije-map-tracker-tag';
@@ -1947,6 +2146,7 @@ function injectDeviceLabelStyle() {
   const style = document.createElement('style');
   style.textContent = `
     ije-map-tracker .maplibregl-marker { position:absolute; top:0; left:0; will-change:transform; }
+    ije-map-tracker .ije-map-tracker-device-on-top { z-index: 3; cursor: pointer; }
     ije-map-tracker .ije-map-tracker-device-label {
       font: 600 12px var(--yoyo-font, sans-serif); white-space: nowrap; pointer-events: none;
       color: #18181B; text-shadow: 0 1px 3px rgba(255,255,255,.95), 0 0 2px rgba(255,255,255,.95);
@@ -1975,6 +2175,45 @@ function injectDeviceLabelStyle() {
       font: 10px var(--yoyo-font, sans-serif); color: var(--yoyo-muted, #71717a);
       background: color-mix(in srgb, var(--yoyo-background, #fff) 75%, transparent);
       border-top-left-radius: 6px;
+    }
+    ije-map-tracker .ije-map-tracker-waypoint { display: flex; align-items: center; gap: 5px; pointer-events: none; }
+    ije-map-tracker .ije-map-tracker-waypoint-circle {
+      box-sizing: border-box; display: flex; align-items: center; justify-content: center;
+      width: ${WAYPOINT_RADIUS_PIXELS * 2}px; height: ${WAYPOINT_RADIUS_PIXELS * 2}px; border-radius: 50%;
+      font: 700 10px var(--yoyo-font, sans-serif); box-shadow: 0 1px 3px rgba(3,7,17,.35);
+    }
+    ije-map-tracker .ije-map-tracker-waypoint-reached {
+      background: var(--ije-waypoint-colour); color: #FFFFFF; border: 2px solid #FFFFFF;
+    }
+    ije-map-tracker .ije-map-tracker-waypoint-upcoming {
+      background: #FFFFFF; color: var(--ije-waypoint-colour); border: 2px solid var(--ije-waypoint-colour);
+    }
+    ije-map-tracker .ije-map-tracker-waypoint-next {
+      position: relative; overflow: visible;
+      width: ${WAYPOINT_NEXT_RADIUS_PIXELS * 2}px; height: ${WAYPOINT_NEXT_RADIUS_PIXELS * 2}px;
+      background: #FFFFFF; color: var(--ije-waypoint-colour); border: 3px solid var(--ije-waypoint-colour);
+    }
+    @keyframes ije-map-tracker-waypoint-ring {
+      0%   { transform: scale(1);   opacity: .85; }
+      80%  { transform: scale(2.8); opacity: 0; }
+      100% { transform: scale(2.8); opacity: 0; }
+    }
+    ije-map-tracker .ije-map-tracker-waypoint-ring {
+      position: absolute; inset: -3px; border-radius: 50%; pointer-events: none;
+      /* Amber, as the goal marker has always pulsed, so the target reads apart from the route's colour. */
+      border: 2px solid ${WARNING_COLOUR};
+      animation: ije-map-tracker-waypoint-ring 1.4s ease-out infinite;
+    }
+    ije-map-tracker .ije-map-tracker-waypoint-ring-later { animation-delay: .7s; }
+    @media (prefers-reduced-motion: reduce) {
+      ije-map-tracker .ije-map-tracker-waypoint-ring { animation: none; opacity: 0; }
+    }
+    ije-map-tracker .ije-map-tracker-waypoint-note {
+      font: 600 10px var(--yoyo-font, sans-serif); white-space: nowrap; color: #566376;
+      text-shadow: 0 1px 2px rgba(255,255,255,.9), 0 0 2px rgba(255,255,255,.9);
+    }
+    ije-map-tracker[basemap="dark"] .ije-map-tracker-waypoint-note {
+      color: #D5DAE1; text-shadow: 0 1px 2px rgba(3,7,17,.9), 0 0 2px rgba(3,7,17,.9);
     }
     ije-map-tracker .ije-map-tracker-station { display: flex; align-items: center; gap: 8px; pointer-events: none; }
     ije-map-tracker .ije-map-tracker-station-box {

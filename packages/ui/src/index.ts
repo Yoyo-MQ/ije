@@ -16,6 +16,7 @@ export type {
   IjeMapPlaceKind,
   IjeMapPosition,
   IjeMapRoute,
+  IjeMapWaypointProgress,
 } from './overlays';
 export { IjeTelemetryChart } from './TelemetryChart';
 export { IjeTelemetryStat } from './TelemetryStat';

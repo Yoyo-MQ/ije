@@ -33,6 +33,7 @@ export type {
   IjeMapPlaceKind,
   IjeMapPosition,
   IjeMapRoute,
+  IjeMapWaypointProgress,
   IjeMapTrackerDeviceAppearance,
   IjeMapTrackerDeviceEmphasis,
 } from '@yoyomq/ije-ui';
