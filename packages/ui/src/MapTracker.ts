@@ -1162,7 +1162,7 @@ export class IjeMapTracker extends HTMLElement {
       // Recorded before the style loads too; the 'load' handler draws it.
       this.handleLocationUpdate(deviceId, { lat: coordinate[1], lng: coordinate[0] });
     } catch (err) {
-      console.warn('[Yoyo ije] Failed to seed last position:', err);
+      if (Ije.config?.debug) console.warn('[Yoyo ije] Failed to seed last position:', err);
     }
   }
 
