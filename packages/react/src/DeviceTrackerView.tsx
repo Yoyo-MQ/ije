@@ -1,10 +1,47 @@
 'use client';
 
 import { forwardRef, useEffect, useRef, useImperativeHandle } from 'react';
-import type { IjeGeofenceOverlay, IjeMapTracker } from '@yoyomq/ije-ui';
+import type {
+  IjeDeviceClickDetail,
+  IjeGeofenceOverlay,
+  IjeMapBasemap,
+  IjeMapOverlays,
+  IjeMapPosition,
+  IjeMapTracker,
+  IjeMapTrackerDeviceAppearance,
+} from '@yoyomq/ije-ui';
 
 export interface IjeDeviceTrackerViewProps {
-  deviceId: number;
+  /** The device to follow. For several devices use `deviceIds` instead. */
+  deviceId?: number;
+  /** Several devices on one map. Live mode follows each one, and picks up devices added to or
+   *  removed from the list; history mode draws one route per device. */
+  deviceIds?: (number | string)[];
+  /** Where live positions come from. 'mqtt' (default) subscribes to each device's feed; 'host'
+   *  takes positions only from the handle's ingestDeviceMessage(), for a host with its own feed. */
+  feed?: 'mqtt' | 'host';
+  /** Per-device label and colour. Devices left out use the marker-* props and no label. */
+  deviceAppearances?: IjeMapTrackerDeviceAppearance[];
+  /** A device marker was clicked. Return `false` to suppress the built-in popup, e.g. when the
+   *  host shows its own device panel instead. */
+  onDeviceClick?: (deviceId: string) => boolean | void;
+  /** A click on the map that did not land on a device, with where it landed. */
+  onMapClick?: (position: IjeMapPosition) => void;
+  /** Fires on every pan and zoom frame, so a host panel can stay anchored with the handle's project(). */
+  onViewChange?: () => void;
+  /** 'streets' (default, OpenStreetMap), or a muted 'dark' or 'light' map that lets devices stand out. */
+  basemap?: IjeMapBasemap;
+  /** Areas, routes and places drawn beneath the devices. */
+  overlays?: IjeMapOverlays;
+  /** Hides the LIVE badge, e.g. while the host is feeding simulated positions. */
+  hideLiveBadge?: boolean;
+  /** Hides the single-device bar of payload fields, for a host that shows its own readings. */
+  hideTelemetryBar?: boolean;
+  /** Draws only each device's marker, no trail: for a host replaying a recording that draws its own path. */
+  hideTrail?: boolean;
+  /** Draws each device above the places (waypoints, stations), which otherwise cover a device
+   *  passing over them. Meant for a few devices: each becomes an HTML marker. */
+  deviceMarkersOnTop?: boolean;
   title?: string;
   helpMessage?: string;
   width?: string;
@@ -26,7 +63,7 @@ export interface IjeDeviceTrackerViewProps {
    *  from their own UI instead. The prev/next/count event-navigation row stays. */
   hideDateRangePicker?: boolean;
   /** Current-position marker style. Defaults to a circle at the theme's primary color. */
-  markerShape?: 'circle' | 'square' | 'pin' | 'car' | 'motorcycle' | 'truck' | 'drone';
+  markerShape?: 'circle' | 'square' | 'pin' | 'car' | 'motorcycle' | 'truck' | 'drone' | 'arrow';
   markerSize?: 'sm' | 'md' | 'lg';
   /** CSS color (hex, rgb(), etc). Defaults to Ije.config.theme.primaryColor, then a fallback purple. */
   markerColor?: string;
@@ -39,16 +76,28 @@ export interface IjeDeviceTrackerViewProps {
 }
 
 /** Ref handle for driving the underlying <ije-map-tracker> element imperatively, e.g.
- *  setPointIndex(i) to move the marker to the i-th telemetry point, or
+ *  setPointIndex(i) to move the markers to the i-th telemetry point, or
  *  addEventListener('ije-telemetry-changed', ...) to know when a new window's telemetry has
  *  loaded -- both are what a host-app Timeline Bar needs to drive playback from outside the
- *  widget. */
+ *  widget. A `feed="host"` tracker takes positions through ingestDeviceMessage(). */
 export type IjeDeviceTrackerViewHandle = IjeMapTracker;
 
 export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDeviceTrackerViewProps>(
   function IjeDeviceTrackerView(
     {
       deviceId,
+      deviceIds,
+      feed,
+      deviceAppearances,
+      onDeviceClick,
+      onMapClick,
+      onViewChange,
+      basemap,
+      overlays,
+      hideLiveBadge,
+      hideTelemetryBar,
+      hideTrail,
+      deviceMarkersOnTop,
       title,
       helpMessage,
       width,
@@ -71,16 +120,55 @@ export const IjeDeviceTrackerView = forwardRef<IjeDeviceTrackerViewHandle, IjeDe
     const ref = useRef<IjeMapTracker | null>(null);
     useImperativeHandle(forwardedRef, () => ref.current as IjeDeviceTrackerViewHandle, []);
 
-    // Fences go through the imperative API rather than an attribute: they are structured data,
-    // and serialising them into the DOM would re-parse the whole set on every render.
+    // Fences and appearances go through the imperative API rather than attributes: they are
+    // structured data, and serialising them into the DOM would re-parse the whole set on every render.
     useEffect(() => {
       ref.current?.setGeofences(geofences ?? []);
     }, [geofences]);
 
+    useEffect(() => {
+      ref.current?.setDeviceAppearances(deviceAppearances ?? []);
+    }, [deviceAppearances]);
+
+    useEffect(() => {
+      const element = ref.current;
+      if (!element || !onDeviceClick) return;
+      const handleDeviceClick = (event: Event) => {
+        const showsPopup = onDeviceClick((event as CustomEvent<IjeDeviceClickDetail>).detail.deviceId);
+        if (showsPopup === false) event.preventDefault();
+      };
+      element.addEventListener('ije-device-click', handleDeviceClick);
+      return () => element.removeEventListener('ije-device-click', handleDeviceClick);
+    }, [onDeviceClick]);
+
+    useEffect(() => {
+      ref.current?.setOverlays(overlays ?? {});
+    }, [overlays]);
+
+    useEffect(() => {
+      const element = ref.current;
+      if (!element) return;
+      const handleMapClick = (event: Event) => onMapClick?.((event as CustomEvent<IjeMapPosition>).detail);
+      const handleViewChange = () => onViewChange?.();
+      element.addEventListener('ije-map-click', handleMapClick);
+      element.addEventListener('ije-view-change', handleViewChange);
+      return () => {
+        element.removeEventListener('ije-map-click', handleMapClick);
+        element.removeEventListener('ije-view-change', handleViewChange);
+      };
+    }, [onMapClick, onViewChange]);
+
     return (
       <ije-map-tracker
         ref={ref}
-        device-id={deviceId}
+        device-id={deviceIds ? undefined : deviceId}
+        device-ids={deviceIds ? deviceIds.join(',') : undefined}
+        feed={feed}
+        basemap={basemap}
+        hide-live-badge={hideLiveBadge ? '' : undefined}
+        hide-telemetry-bar={hideTelemetryBar ? '' : undefined}
+        hide-trail={hideTrail ? '' : undefined}
+        device-markers-on-top={deviceMarkersOnTop ? '' : undefined}
         title={title}
         help-message={helpMessage}
         width={width}
