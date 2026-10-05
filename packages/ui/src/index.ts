@@ -4,6 +4,8 @@ export { IjeBarChart } from './BarChart';
 export type { BarChartData } from './BarChart';
 export { IjeChat } from './IjeChat';
 export type { ResourceLinkResolvers } from './IjeChat';
+export { IjeDeviceTargets } from './DeviceTargets';
+export type { IjeSetpointEventDetail } from './DeviceTargets';
 export { IjeMapTracker } from './MapTracker';
 export type { IjeDeviceClickDetail, IjeMapBasemap } from './MapTracker';
 export type { IjeCoveredEdges } from './camera';

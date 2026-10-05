@@ -32,7 +32,7 @@ like a password.
 
 | Package | Install name | What it is |
 |---------|--------------|------------|
-| Core    | `@yoyomq/ije-core` | Runtime singleton (`Ije`): init, config/theme, MQTT, chat API |
+| Core    | `@yoyomq/ije-core` | Runtime singleton (`Ije`): init, config/theme, MQTT, chat, setpoints and Commands APIs |
 | UI      | `@yoyomq/ije-ui`   | The custom elements (`<ije-*>`). Importing it registers them. |
 | React   | `@yoyomq/ije-react`| Thin React wrappers — **placeholder, not yet implemented** |
 
@@ -221,6 +221,48 @@ what it needs to anchor its own panels.
 In React, `IjeDeviceTrackerView` takes these as props (`deviceIds`, `feed`, `basemap`,
 `overlays`, `deviceAppearances`, `hideLiveBadge`, `onDeviceClick`, `onMapClick`,
 `onViewChange`), and its ref is the element.
+
+### `<ije-device-targets>` — device targets
+
+The targets of one device. For each field that can have a target (a greenhouse's air
+temperature, say) it shows where the field should sit, how far it may stray, the Command
+that delivers the target, and where the device stands against it: **Needs a Command**,
+**Waiting to send**, **Applying**, **At target** or **Not reached**. A target can be saved
+before any Command exists; the component then says nothing can deliver it yet.
+
+| Attribute | Description |
+|-----------|-------------|
+| `device-id` | Device id (required) |
+| `title` | Heading (defaults to "Targets") |
+| `refresh-interval` | Seconds between refreshes of the device's state (default 15, `0` turns it off) |
+
+```html
+<ije-device-targets device-id="12"></ije-device-targets>
+```
+
+The API key needs `device:read` to show targets and `device:write` to change them. The
+Command picker needs `command:read`, and "Send it now" needs `command:run` plus
+`device:write` on the device. Without `command:read` the picker lists only "None yet".
+
+| Method | Description |
+|--------|-------------|
+| `refresh()` | Reloads the targets and their state |
+| `refreshCommands()` | Reloads the Command picker, for a host that has just created a Command |
+
+| Event | Detail |
+|-------|--------|
+| `ije-setpoint-saved` / `ije-setpoint-removed` | `{ deviceId, fieldKey }` |
+| `ije-command-sent` | `{ deviceId, fieldKey }`: the attached Command was sent to the device |
+| `ije-create-command` | `{ deviceId, fieldKey }`: the person asked to create a Command. Open your own form (`Ije.commands.create(...)`), then call `refreshCommands()` |
+| `ije-error` | `{ message }` |
+
+The same calls are available without the widget as `Ije.setpoints` (`list`, `save`,
+`remove`) and `Ije.commands` (`list`, `create`, `run`), over the public API's
+`/devices/{id}/field_setpoints` and `/commands` routes.
+
+In React, `IjeDeviceTargets` takes `deviceId`, `title`, `refreshInterval` and
+`onSetpointSaved`, `onSetpointRemoved`, `onCommandSent`, `onCreateCommand`, `onError`;
+its ref is the element.
 
 ### `<ije-telemetry-stat>` — single live metric
 

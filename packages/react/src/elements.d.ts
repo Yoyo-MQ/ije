@@ -11,6 +11,7 @@ declare global {
       'ije-chat':            El & { [k: string]: any };
       'ije-aggregate-stat':  El & { [k: string]: any };
       'ije-bar-chart':       El & { [k: string]: any };
+      'ije-device-targets':  El & { [k: string]: any };
     }
   }
 }

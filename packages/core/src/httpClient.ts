@@ -50,6 +50,28 @@ export class IjeHttpClient {
     return this.parseResponse<T>(response);
   }
 
+  async put<T>(path: string, body: unknown): Promise<T> {
+    const url = this.buildUrl(path);
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.buildHeaders(),
+      },
+      body: JSON.stringify(body),
+    });
+    return this.parseResponse<T>(response);
+  }
+
+  async delete(path: string): Promise<void> {
+    const url = this.buildUrl(path);
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: this.buildHeaders(),
+    });
+    await this.parseResponse<void>(response);
+  }
+
   private buildUrl(
     path: string,
     params?: Record<string, ScalarParam>,
@@ -81,14 +103,20 @@ export class IjeHttpClient {
       let errorCode: string | null = null;
       let errorMessage: string | null = null;
       try {
-        const parsed = JSON.parse(body) as { error?: { code?: string; message?: string } };
-        errorCode = parsed.error?.code ?? null;
-        errorMessage = parsed.error?.message ?? null;
+        // The API answers with either { error: { code, message } } or { error: "text" }.
+        const parsed = JSON.parse(body) as { error?: string | { code?: string; message?: string } };
+        if (typeof parsed.error === 'string') {
+          errorMessage = parsed.error;
+        } else {
+          errorCode = parsed.error?.code ?? null;
+          errorMessage = parsed.error?.message ?? null;
+        }
       } catch {
         errorMessage = body || null;
       }
       throw new IjeApiError(response.status, errorCode, errorMessage);
     }
+    if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }
 }
