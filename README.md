@@ -242,7 +242,7 @@ before any Command exists; the component then says nothing can deliver it yet.
 ```
 
 The API key needs `device:read` to show targets and `device:write` to change them. The
-Command picker needs `command:read`, and "Send it now" needs `command:run` plus
+Command picker is searchable (it searches Commands on the server as you type) and needs `command:read`, and "Send it now" needs `command:run` plus
 `device:write` on the device. Without `command:read` the picker lists only "None yet".
 
 | Method | Description |

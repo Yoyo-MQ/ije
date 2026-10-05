@@ -76,3 +76,23 @@ export function isDraftDirty(
     draft.commandValue !== (saved.command_uuid ?? NO_COMMAND_VALUE)
   );
 }
+
+export interface CommandTriggerLabel {
+  text: string;
+  /** True when nothing is chosen, so the label reads as a placeholder. */
+  isPlaceholder: boolean;
+}
+
+/** What the Command picker's button shows: the chosen Command's title, "None yet", or a generic label when the Command is attached but not in the list this key can read. */
+export function commandTriggerLabel(commands: { uuid: string; title: string }[], commandValue: string): CommandTriggerLabel {
+  if (commandValue === NO_COMMAND_VALUE) return { text: 'None yet', isPlaceholder: true };
+  const command = commands.find((candidate) => candidate.uuid === commandValue);
+  return { text: command?.title ?? 'A Command is attached', isPlaceholder: false };
+}
+
+/** Moves the highlighted option up or down, wrapping at both ends; -1 means nothing is highlighted yet. */
+export function nextHighlightIndex(current: number, direction: 1 | -1, optionCount: number): number {
+  if (optionCount === 0) return -1;
+  if (current < 0) return direction === 1 ? 0 : optionCount - 1;
+  return (current + direction + optionCount) % optionCount;
+}

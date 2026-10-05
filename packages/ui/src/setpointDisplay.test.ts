@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canSendCommand, clampSetpointValue, escapeHtml, isDraftDirty, rangeBarGeometry } from './setpointDisplay';
+import { canSendCommand, clampSetpointValue, commandTriggerLabel, escapeHtml, isDraftDirty, nextHighlightIndex, rangeBarGeometry } from './setpointDisplay';
 
 describe('clampSetpointValue', () => {
   it('rounds to the nearest half step', () => {
@@ -62,5 +62,38 @@ describe('isDraftDirty', () => {
 
   it('is dirty for a field with nothing saved yet', () => {
     expect(isDraftDirty(undefined, { target: 20, tolerance: 1, commandValue: 'none' })).toBe(true);
+  });
+});
+
+describe('commandTriggerLabel', () => {
+  const commands = [{ uuid: 'c1', title: 'Set air temperature' }];
+
+  it('shows the chosen Command by title', () => {
+    expect(commandTriggerLabel(commands, 'c1')).toEqual({ text: 'Set air temperature', isPlaceholder: false });
+  });
+
+  it('shows None yet as a placeholder when no Command is chosen', () => {
+    expect(commandTriggerLabel(commands, 'none')).toEqual({ text: 'None yet', isPlaceholder: true });
+  });
+
+  it('does not claim None yet for a Command this key cannot read', () => {
+    expect(commandTriggerLabel([], 'c9').isPlaceholder).toBe(false);
+    expect(commandTriggerLabel([], 'c9').text).toBe('A Command is attached');
+  });
+});
+
+describe('nextHighlightIndex', () => {
+  it('starts at the first option going down and the last going up', () => {
+    expect(nextHighlightIndex(-1, 1, 3)).toBe(0);
+    expect(nextHighlightIndex(-1, -1, 3)).toBe(2);
+  });
+
+  it('wraps at both ends', () => {
+    expect(nextHighlightIndex(2, 1, 3)).toBe(0);
+    expect(nextHighlightIndex(0, -1, 3)).toBe(2);
+  });
+
+  it('highlights nothing when there are no options', () => {
+    expect(nextHighlightIndex(0, 1, 0)).toBe(-1);
   });
 });
