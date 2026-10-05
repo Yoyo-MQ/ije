@@ -2,6 +2,8 @@ import { IjeMqttManager } from './mqttManager';
 import { IjeChatClient } from './chatClient';
 import { IjeTelemetryClient } from './telemetryClient';
 import { IjeHttpClient } from './httpClient';
+import { IjeSetpointsClient } from './setpointsClient';
+import { IjeCommandsClient } from './commandsClient';
 
 export type {
   AiGeneratedProposalSummary,
@@ -32,6 +34,18 @@ export type {
 } from './telemetryClient';
 export { IjeTelemetryClient } from './telemetryClient';
 export { IjeHttpClient } from './httpClient';
+export type {
+  IjeSetpointData,
+  IjeSetpointField,
+  IjeSetpointMeasuredField,
+  IjeSetpointNormalRange,
+  IjeSetpointState,
+  IjeSetpointsResponse,
+  SaveSetpointParams,
+} from './setpointsClient';
+export { IjeSetpointsClient } from './setpointsClient';
+export type { CreateCommandParams, IjeCommand, IjeCommandProtocol } from './commandsClient';
+export { IjeCommandsClient, chooseCommandProtocol } from './commandsClient';
 
 export interface SdkConfig {
   /**
@@ -65,6 +79,8 @@ export class IjeSDK {
   public chat: IjeChatClient;
   public telemetry: IjeTelemetryClient;
   public http: IjeHttpClient;
+  public setpoints: IjeSetpointsClient;
+  public commands: IjeCommandsClient;
   /**
    * Server-resolved Whitelabelling entitlement (GET /context). When true, widgets
    * omit the "Powered by Yoyo" footer (see branding.ts's createPoweredByYoyo()). Always starts
@@ -78,6 +94,8 @@ export class IjeSDK {
     this.chat = new IjeChatClient();
     this.telemetry = new IjeTelemetryClient();
     this.http = new IjeHttpClient();
+    this.setpoints = new IjeSetpointsClient();
+    this.commands = new IjeCommandsClient();
   }
 
   public static getInstance(): IjeSDK {
@@ -109,6 +127,8 @@ export class IjeSDK {
     this.chat._setConfig(this.config);
     this.telemetry._setConfig(this.config);
     this.http._setConfig(this.config);
+    this.setpoints._setConfig(this.config);
+    this.commands._setConfig(this.config);
 
     // Resolve the organization UUID so UI widgets can build correct MQTT topics, and the
     // Whitelabelling entitlement so widgets know whether to render "Powered by Yoyo".
