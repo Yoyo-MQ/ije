@@ -13,7 +13,7 @@ async function connect(apiUrl: string, apiKey: string, deviceId: string) {
   // No MQTT here: the targets read the REST API only.
   await Ije.init({ apiKey, apiUrl, mqttUrl: '' });
   targetsHost.replaceChildren();
-  const element = document.createElement('ije-device-targets');
+  const element = document.createElement('ije-setpoint');
   element.setAttribute('device-id', deviceId);
   for (const name of ['ije-setpoint-saved', 'ije-setpoint-removed', 'ije-command-sent', 'ije-create-command', 'ije-error']) {
     element.addEventListener(name, (event) => log(`${name} ${JSON.stringify((event as CustomEvent).detail)}`));

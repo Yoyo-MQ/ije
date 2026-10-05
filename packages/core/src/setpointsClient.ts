@@ -20,7 +20,7 @@ export interface IjeSetpointMeasuredField {
 }
 
 /** A saved target for one field of one device. */
-export interface IjeSetpoint {
+export interface IjeSetpointData {
   id: string;
   device_id: number;
   field_key: string;
@@ -46,7 +46,7 @@ export interface IjeSetpointField {
 }
 
 export interface IjeSetpointsResponse {
-  device_field_setpoints: IjeSetpoint[];
+  device_field_setpoints: IjeSetpointData[];
   setpoint_fields: IjeSetpointField[];
 }
 
@@ -73,8 +73,8 @@ export class IjeSetpointsClient {
   }
 
   /** Saves the target of one field, replacing the one it has. Saving sends nothing to the device. */
-  save(params: SaveSetpointParams): Promise<IjeSetpoint> {
-    return this.http.put<IjeSetpoint>(
+  save(params: SaveSetpointParams): Promise<IjeSetpointData> {
+    return this.http.put<IjeSetpointData>(
       `/devices/${params.deviceId}/field_setpoints/${encodeURIComponent(params.fieldKey)}`,
       {
         target_value: params.targetValue,

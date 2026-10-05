@@ -1,10 +1,12 @@
 'use client';
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import type { IjeDeviceTargets as IjeDeviceTargetsElement, IjeSetpointEventDetail } from '@yoyomq/ije-ui';
+import type { IjeSetpoint as IjeSetpointElement, IjeSetpointEventDetail } from '@yoyomq/ije-ui';
 
-export interface IjeDeviceTargetsProps {
+export interface IjeSetpointProps {
   deviceId: number;
+  /** Show only this field (its key from the device's schema); otherwise every field that can have a target. */
+  fieldKey?: string;
   /** Heading above the targets. Defaults to "Targets". */
   title?: string;
   /** Seconds between refreshes of where the device stands against each target. Defaults to 15; 0 turns it off. */
@@ -17,16 +19,16 @@ export interface IjeDeviceTargetsProps {
   onError?: (message: string) => void;
 }
 
-/** Ref handle for the underlying <ije-device-targets> element: refresh() reloads the targets, refreshCommands() reloads the Command picker. */
-export type IjeDeviceTargetsHandle = IjeDeviceTargetsElement;
+/** Ref handle for the underlying <ije-setpoint> element: refresh() reloads the targets, refreshCommands() reloads the Command picker. */
+export type IjeSetpointHandle = IjeSetpointElement;
 
 /** The targets of one device: target, tolerance, the Command that delivers it, and where the device stands. Needs device:read to show and device:write to change; the Command picker needs command:read and sending needs command:run. */
-export const IjeDeviceTargets = forwardRef<IjeDeviceTargetsHandle, IjeDeviceTargetsProps>(function IjeDeviceTargets(
-  { deviceId, title, refreshInterval, onSetpointSaved, onSetpointRemoved, onCommandSent, onCreateCommand, onError },
+export const IjeSetpoint = forwardRef<IjeSetpointHandle, IjeSetpointProps>(function IjeSetpoint(
+  { deviceId, fieldKey, title, refreshInterval, onSetpointSaved, onSetpointRemoved, onCommandSent, onCreateCommand, onError },
   forwardedRef,
 ) {
-  const ref = useRef<IjeDeviceTargetsElement | null>(null);
-  useImperativeHandle(forwardedRef, () => ref.current as IjeDeviceTargetsHandle, []);
+  const ref = useRef<IjeSetpointElement | null>(null);
+  useImperativeHandle(forwardedRef, () => ref.current as IjeSetpointHandle, []);
 
   useEffect(() => {
     const element = ref.current;
@@ -51,9 +53,10 @@ export const IjeDeviceTargets = forwardRef<IjeDeviceTargetsHandle, IjeDeviceTarg
   }, [onSetpointSaved, onSetpointRemoved, onCommandSent, onCreateCommand, onError]);
 
   return (
-    <ije-device-targets
+    <ije-setpoint
       ref={ref}
       device-id={deviceId}
+      field-key={fieldKey}
       title={title}
       refresh-interval={refreshInterval}
     />

@@ -222,7 +222,7 @@ In React, `IjeDeviceTrackerView` takes these as props (`deviceIds`, `feed`, `bas
 `overlays`, `deviceAppearances`, `hideLiveBadge`, `onDeviceClick`, `onMapClick`,
 `onViewChange`), and its ref is the element.
 
-### `<ije-device-targets>` — device targets
+### `<ije-setpoint>` — a device target
 
 The targets of one device. For each field that can have a target (a greenhouse's air
 temperature, say) it shows where the field should sit, how far it may stray, the Command
@@ -233,11 +233,12 @@ before any Command exists; the component then says nothing can deliver it yet.
 | Attribute | Description |
 |-----------|-------------|
 | `device-id` | Device id (required) |
+| `field-key` | Show only this field, such as `setpoint`; omit it to show every field that can have a target |
 | `title` | Heading (defaults to "Targets") |
 | `refresh-interval` | Seconds between refreshes of the device's state (default 15, `0` turns it off) |
 
 ```html
-<ije-device-targets device-id="12"></ije-device-targets>
+<ije-setpoint device-id="12"></ije-setpoint>
 ```
 
 The API key needs `device:read` to show targets and `device:write` to change them. The
@@ -260,7 +261,7 @@ The same calls are available without the widget as `Ije.setpoints` (`list`, `sav
 `remove`) and `Ije.commands` (`list`, `create`, `run`), over the public API's
 `/devices/{id}/field_setpoints` and `/commands` routes.
 
-In React, `IjeDeviceTargets` takes `deviceId`, `title`, `refreshInterval` and
+In React, `IjeSetpoint` takes `deviceId`, `fieldKey`, `title`, `refreshInterval` and
 `onSetpointSaved`, `onSetpointRemoved`, `onCommandSent`, `onCreateCommand`, `onError`;
 its ref is the element.
 

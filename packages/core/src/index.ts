@@ -35,7 +35,7 @@ export type {
 export { IjeTelemetryClient } from './telemetryClient';
 export { IjeHttpClient } from './httpClient';
 export type {
-  IjeSetpoint,
+  IjeSetpointData,
   IjeSetpointField,
   IjeSetpointMeasuredField,
   IjeSetpointNormalRange,

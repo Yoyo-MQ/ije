@@ -1,5 +1,5 @@
 import { Ije, IjeApiError } from '@yoyomq/ije-core';
-import type { IjeCommand, IjeSetpoint, IjeSetpointField, IjeSetpointState, IjeSetpointsResponse } from '@yoyomq/ije-core';
+import type { IjeCommand, IjeSetpointData, IjeSetpointField, IjeSetpointState, IjeSetpointsResponse } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 import {
   NO_COMMAND_VALUE,
@@ -34,18 +34,18 @@ export interface IjeSetpointEventDetail {
 }
 
 /**
- * `<ije-device-targets device-id="12">` — the targets of one device: for each field that can have one, the target, how far the
+ * `<ije-setpoint device-id="12">` — the targets of one device: for each field that can have one, the target, how far the
  * value may stray from it, the Command that delivers it, and where the device stands. Needs `device:read` to show and
  * `device:write` to change; the Command picker needs `command:read` and sending needs `command:run`.
  *
- * Attributes: `device-id` (required), `title` (heading, default "Targets"), `refresh-interval` (seconds between state
+ * Attributes: `device-id` (required), `field-key` (show only this field, otherwise every field that can have a target), `title` (heading, default "Targets"), `refresh-interval` (seconds between state
  * refreshes, default 15, 0 turns it off).
  *
  * Events: `ije-setpoint-saved`, `ije-setpoint-removed`, `ije-command-sent` (detail: `{ deviceId, fieldKey }`), and
  * `ije-create-command` (same detail), fired when the person asks to create a Command so the host can open its own flow;
  * call `refreshCommands()` once the Command exists. `ije-error` carries `{ message }`.
  */
-export class IjeDeviceTargets extends HTMLElement {
+export class IjeSetpoint extends HTMLElement {
   private response: IjeSetpointsResponse | null = null;
   private commands: IjeCommand[] = [];
   private commandsUnavailable = false;
@@ -58,12 +58,14 @@ export class IjeDeviceTargets extends HTMLElement {
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   static get observedAttributes() {
-    return ['device-id', 'title', 'refresh-interval'];
+    return ['device-id', 'field-key', 'title', 'refresh-interval'];
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
     if (oldValue === newValue || !this.isConnected) return;
-    if (name === 'device-id') {
+    if (name === 'field-key') {
+      this.render();
+    } else if (name === 'device-id') {
       this.response = null;
       this.drafts.clear();
       this.addingFieldKeys.clear();
@@ -161,7 +163,7 @@ export class IjeDeviceTargets extends HTMLElement {
     this.dispatchEvent(new CustomEvent<IjeSetpointEventDetail>(name, { bubbles: true, detail: { deviceId, fieldKey } }));
   }
 
-  private savedSetpoint(fieldKey: string): IjeSetpoint | undefined {
+  private savedSetpoint(fieldKey: string): IjeSetpointData | undefined {
     return this.response?.device_field_setpoints.find((setpoint) => setpoint.field_key === fieldKey);
   }
 
@@ -406,14 +408,16 @@ export class IjeDeviceTargets extends HTMLElement {
   private render() {
     if (!this.container) return;
     const title = escapeHtml(this.getAttribute('title') || 'Targets');
-    const fields = this.response?.setpoint_fields ?? [];
+    const fieldKey = this.getAttribute('field-key');
+    const allFields = this.response?.setpoint_fields ?? [];
+    const fields = fieldKey ? allFields.filter((field) => field.field_key === fieldKey) : allFields;
     let body: string;
     if (this.isLoading && !this.response) {
       body = '<p style="margin:0; font-size: 13px; color: var(--yoyo-muted, #888);">Loading targets…</p>';
     } else if (!this.response) {
       body = `<p style="margin:0; font-size: 13px; color: #ef4444;">${escapeHtml(this.errorMessage ?? 'Could not load the targets.')}</p><button type="button" data-action="retry" style="margin-top: 8px; font: inherit; font-size: 13px; cursor: pointer;">Try again</button>`;
     } else if (fields.length === 0) {
-      body = '<p style="margin:0; font-size: 13px; color: var(--yoyo-muted, #888);">This device has no fields that can have a target.</p>';
+      body = `<p style="margin:0; font-size: 13px; color: var(--yoyo-muted, #888);">${fieldKey ? 'This device has no such field that can have a target.' : 'This device has no fields that can have a target.'}</p>`;
     } else {
       body = fields.map((field) => this.renderField(field)).join('');
     }
@@ -428,6 +432,6 @@ export class IjeDeviceTargets extends HTMLElement {
   }
 }
 
-if (typeof window !== 'undefined' && !customElements.get('ije-device-targets')) {
-  customElements.define('ije-device-targets', IjeDeviceTargets);
+if (typeof window !== 'undefined' && !customElements.get('ije-setpoint')) {
+  customElements.define('ije-setpoint', IjeSetpoint);
 }

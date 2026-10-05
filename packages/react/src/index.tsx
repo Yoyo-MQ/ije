@@ -13,8 +13,8 @@ export type { IjeTelemetryChartProps } from './TelemetryChart';
 export { IjeChat } from './Chat';
 export type { IjeChatProps, IjeChatHandle } from './Chat';
 
-export { IjeDeviceTargets } from './DeviceTargets';
-export type { IjeDeviceTargetsProps, IjeDeviceTargetsHandle } from './DeviceTargets';
+export { IjeSetpoint } from './Setpoint';
+export type { IjeSetpointProps, IjeSetpointHandle } from './Setpoint';
 
 export { IjeAggregateStat } from './AggregateStat';
 export type { IjeAggregateStatProps } from './AggregateStat';
@@ -25,7 +25,7 @@ export type { IjeBarChartProps } from './BarChart';
 export type {
   SdkConfig,
   IjeTelemetryPoint,
-  IjeSetpoint,
+  IjeSetpointData,
   IjeSetpointField,
   IjeSetpointState,
   IjeCommand,
