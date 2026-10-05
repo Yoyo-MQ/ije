@@ -51,6 +51,8 @@ export interface IjeSetpointEventDetail {
 export class IjeSetpoint extends HTMLElement {
   private response: IjeSetpointsResponse | null = null;
   private commands: IjeCommand[] = [];
+  // Every Command seen so far, including ones that only a search returned, so a picked result keeps its title and can be sent.
+  private knownCommands = new Map<string, IjeCommand>();
   private commandsUnavailable = false;
   private drafts = new Map<string, SetpointDraft>();
   private addingFieldKeys = new Set<string>();
@@ -156,10 +158,15 @@ export class IjeSetpoint extends HTMLElement {
     }
   }
 
+  private rememberCommands(commands: IjeCommand[]) {
+    for (const command of commands) this.knownCommands.set(command.uuid, command);
+  }
+
   /** Reloads the Commands in the picker, for a host that has just created one. */
   async refreshCommands(): Promise<void> {
     try {
       this.commands = await Ije.commands.list();
+      this.rememberCommands(this.commands);
       this.commandsUnavailable = false;
     } catch (error) {
       this.commandsUnavailable = error instanceof IjeApiError && error.status === 403;
@@ -276,6 +283,7 @@ export class IjeSetpoint extends HTMLElement {
       const found = await Ije.commands.list(text);
       if (text !== this.pickerSearch.trim()) return;
       this.pickerResults = found;
+      this.rememberCommands(found);
       this.pickerError = null;
     } catch (error) {
       if (text !== this.pickerSearch.trim()) return;
@@ -394,7 +402,7 @@ export class IjeSetpoint extends HTMLElement {
   private async sendCommand(field: IjeSetpointField) {
     const deviceId = this.deviceId;
     const commandUuid = this.savedSetpoint(field.field_key)?.command_uuid;
-    const command = this.commands.find((candidate) => candidate.uuid === commandUuid);
+    const command = commandUuid ? this.knownCommands.get(commandUuid) : undefined;
     if (deviceId == null || !command) {
       this.errorMessage = 'The attached Command is not available to this API key.';
       this.render();
@@ -468,7 +476,7 @@ export class IjeSetpoint extends HTMLElement {
 
   private renderPicker(field: IjeSetpointField, draft: SetpointDraft, isBusy: boolean): string {
     const isOpen = this.openPickerFieldKey === field.field_key;
-    const label = commandTriggerLabel(this.commands, draft.commandValue);
+    const label = commandTriggerLabel([...this.knownCommands.values()], draft.commandValue);
     const chevrons = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; opacity:0.5; margin-left: 8px;" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>';
     const search = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; opacity:0.5;" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
     const popover = isOpen
