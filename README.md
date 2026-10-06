@@ -254,15 +254,37 @@ Command picker is searchable (it searches Commands on the server as you type) an
 |-------|--------|
 | `ije-setpoint-saved` / `ije-setpoint-removed` | `{ deviceId, fieldKey }` |
 | `ije-command-sent` | `{ deviceId, fieldKey, isQueued }`: the attached Command was sent; `isQueued` is true when the device is offline and the command waits for it to reconnect |
+| `ije-delivery-incomplete` | `{ deviceId, fieldKey, statusSlug }`: when the element loads a device, a target's last send is still `queued` or `failed` (fires once per field) |
 | `ije-create-command` | `{ deviceId, fieldKey }`: the person asked to create a Command. Open your own form (`Ije.commands.create(...)`), then call `refreshCommands()` |
 | `ije-error` | `{ message }` |
 
 The same calls are available without the widget as `Ije.setpoints` (`list`, `save`,
-`remove`) and `Ije.commands` (`list`, `create`, `run`), over the public API's
-`/devices/{id}/field_setpoints` and `/commands` routes.
+`remove`) and `Ije.commands` (`list`, `create`, `run`, `latestRun`), over the public API's
+`/devices/{id}/field_setpoints`, `/commands` and `/command_runs` routes.
+
+Under each target that has a Command, the widget shows the last send ("Last sent 3 min ago.", "Queued 2 min ago: the device is
+offline, so it runs when it reconnects.", or "Last send failed ..."), with "Send it again" when it was queued or failed. This needs
+`device:read`; without it the line is left out. "Sent" means Yoyo wrote the command to the device's connection or published it. The
+device does not acknowledge it, so only the reading moving into range confirms the target.
+
+To build your own Command form instead of leaving the target without one, handle `ije-create-command`, create the Command, and
+refresh the picker (the key needs `command:create` and `command:read`):
+
+```js
+const setpoint = document.querySelector('ije-setpoint');
+setpoint.addEventListener('ije-create-command', async () => {
+  await Ije.commands.create({
+    title: 'Set greenhouse temperature',
+    description: 'Sends the temperature target to the controller',
+    messageContent: '{"set_temperature": 21}',
+    protocolsAllowed: ['mqtt'],
+  });
+  await setpoint.refreshCommands();
+});
+```
 
 In React, `IjeSetpoint` takes `deviceId`, `fieldKey`, `title`, `refreshInterval` and
-`onSetpointSaved`, `onSetpointRemoved`, `onCommandSent`, `onCreateCommand`, `onError`;
+`onSetpointSaved`, `onSetpointRemoved`, `onCommandSent`, `onDeliveryIncomplete`, `onCreateCommand`, `onError`;
 its ref is the element.
 
 ### `<ije-telemetry-stat>` — single live metric

@@ -96,3 +96,36 @@ export function nextHighlightIndex(current: number, direction: 1 | -1, optionCou
   if (current < 0) return direction === 1 ? 0 : optionCount - 1;
   return (current + direction + optionCount) % optionCount;
 }
+
+export type LastSendTone = 'ok' | 'waiting' | 'failed';
+
+export interface LastSendDescription {
+  text: string;
+  tone: LastSendTone;
+  /** True when the last send did not reach the device (queued or failed), so a person should look at it. */
+  isIncomplete: boolean;
+}
+
+/** "just now", "3 min ago", "2 h ago", "4 d ago". */
+export function formatAgo(sinceIso: string, nowMilliseconds: number): string {
+  const seconds = Math.max(0, Math.floor((nowMilliseconds - new Date(sinceIso).getTime()) / 1000));
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`;
+  return `${Math.floor(seconds / 86400)} d ago`;
+}
+
+/** What to tell the person about the most recent send of the target's Command; null when it has never been sent. */
+export function describeLastSend(
+  run: { status_slug: 'queued' | 'sent' | 'failed'; error_message?: string; created_at: string } | null,
+  nowMilliseconds: number,
+): LastSendDescription | null {
+  if (!run) return null;
+  const ago = formatAgo(run.created_at, nowMilliseconds);
+  if (run.status_slug === 'sent') return { text: `Last sent ${ago}.`, tone: 'ok', isIncomplete: false };
+  if (run.status_slug === 'queued') {
+    return { text: `Queued ${ago}: the device is offline, so it runs when it reconnects.`, tone: 'waiting', isIncomplete: true };
+  }
+  const reason = run.error_message ? ` ${run.error_message}.` : '';
+  return { text: `Last send failed ${ago}.${reason}`, tone: 'failed', isIncomplete: true };
+}

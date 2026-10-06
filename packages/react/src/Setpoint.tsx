@@ -14,6 +14,8 @@ export interface IjeSetpointProps {
   onSetpointSaved?: (detail: IjeSetpointEventDetail) => void;
   onSetpointRemoved?: (detail: IjeSetpointEventDetail) => void;
   onCommandSent?: (detail: IjeSetpointEventDetail) => void;
+  /** A target's last send is still queued or failed when the element loads the device (once per field). */
+  onDeliveryIncomplete?: (detail: IjeSetpointEventDetail) => void;
   /** The person asked to create a Command. Open your own flow, then call the handle's refreshCommands(). */
   onCreateCommand?: (detail: IjeSetpointEventDetail) => void;
   onError?: (message: string) => void;
@@ -24,7 +26,7 @@ export type IjeSetpointHandle = IjeSetpointElement;
 
 /** The targets of one device: target, tolerance, the Command that delivers it, and where the device stands. Needs device:read to show and device:write to change; the Command picker needs command:read and sending needs command:run. */
 export const IjeSetpoint = forwardRef<IjeSetpointHandle, IjeSetpointProps>(function IjeSetpoint(
-  { deviceId, fieldKey, title, refreshInterval, onSetpointSaved, onSetpointRemoved, onCommandSent, onCreateCommand, onError },
+  { deviceId, fieldKey, title, refreshInterval, onSetpointSaved, onSetpointRemoved, onCommandSent, onDeliveryIncomplete, onCreateCommand, onError },
   forwardedRef,
 ) {
   const ref = useRef<IjeSetpointElement | null>(null);
@@ -43,6 +45,7 @@ export const IjeSetpoint = forwardRef<IjeSetpointHandle, IjeSetpointProps>(funct
     listen('ije-setpoint-saved', onSetpointSaved);
     listen('ije-setpoint-removed', onSetpointRemoved);
     listen('ije-command-sent', onCommandSent);
+    listen('ije-delivery-incomplete', onDeliveryIncomplete);
     listen('ije-create-command', onCreateCommand);
     if (onError) {
       const errorListener = (event: Event) => onError((event as CustomEvent<{ message: string }>).detail.message);
@@ -50,7 +53,7 @@ export const IjeSetpoint = forwardRef<IjeSetpointHandle, IjeSetpointProps>(funct
       listeners.push(['ije-error', errorListener]);
     }
     return () => listeners.forEach(([name, listener]) => element.removeEventListener(name, listener));
-  }, [onSetpointSaved, onSetpointRemoved, onCommandSent, onCreateCommand, onError]);
+  }, [onSetpointSaved, onSetpointRemoved, onCommandSent, onDeliveryIncomplete, onCreateCommand, onError]);
 
   return (
     <ije-setpoint
