@@ -43,6 +43,8 @@ export interface IjeSetpointField {
   unit?: string;
   /** The measured field this setpoint steers, such as temperature for the air temperature target. */
   measured_field?: string;
+  /** The value the device last reported for the measured field, to start a new target near it. */
+  measured_value?: number | string | boolean | null;
 }
 
 export interface IjeSetpointsResponse {
