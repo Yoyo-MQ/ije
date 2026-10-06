@@ -45,6 +45,8 @@ export interface IjeSetpointField {
   measured_field?: string;
   /** The value the device last reported for the measured field, to start a new target near it. */
   measured_value?: number | string | boolean | null;
+  /** How far a new target of this field may stray when the person has not chosen; absent means the widget's default. */
+  default_tolerance?: number;
 }
 
 export interface IjeSetpointsResponse {

@@ -240,7 +240,7 @@ export class IjeSetpoint extends HTMLElement {
     const reading = typeof readingCandidate === 'number' ? readingCandidate : null;
     return {
       target: saved?.target_value ?? (reading != null ? clampSetpointValue(reading, -Infinity) : DEFAULT_TARGET),
-      tolerance: saved?.tolerance_value ?? DEFAULT_TOLERANCE,
+      tolerance: saved?.tolerance_value ?? field.default_tolerance ?? DEFAULT_TOLERANCE,
       commandValue: saved?.command_uuid ?? NO_COMMAND_VALUE,
     };
   }

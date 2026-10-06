@@ -39,17 +39,21 @@ function buildRun(statusSlug: 'queued' | 'sent' | 'failed', errorMessage?: strin
 }
 
 async function mountElement(): Promise<{ element: IjeSetpoint; events: CustomEvent[] }> {
+  return mountElementWith('Target temperature');
+}
+
+async function mountElementWith(expectedText: string): Promise<{ element: IjeSetpoint; events: CustomEvent[] }> {
   const element = document.createElement('ije-setpoint') as IjeSetpoint;
   element.setAttribute('device-id', '7');
   element.setAttribute('refresh-interval', '0');
   const events: CustomEvent[] = [];
   element.addEventListener('ije-delivery-incomplete', (event) => events.push(event as CustomEvent));
   document.body.appendChild(element);
-  await vi.waitFor(() => expect(element.textContent).toContain('Target temperature'));
+  await vi.waitFor(() => expect(element.textContent).toContain(expectedText));
   return { element, events };
 }
 
-describe('ije-setpoint delivery line', () => {
+describe('ije-setpoint', () => {
   beforeEach(() => {
     listCommands.mockResolvedValue([]);
   });
@@ -122,5 +126,17 @@ describe('ije-setpoint delivery line', () => {
     await mountElement();
 
     expect(latestRun).not.toHaveBeenCalled();
+  });
+
+  it('starts a new target with the tolerance its field defaults to', async () => {
+    listSetpoints.mockResolvedValue({
+      setpoint_fields: [{ field_key: 'humidity_setpoint', label: 'Target humidity', unit: '%', default_tolerance: 5 }],
+      device_field_setpoints: [],
+    });
+    const { element } = await mountElementWith('Target humidity');
+
+    element.querySelector<HTMLButtonElement>('[data-action=add]')?.click();
+
+    expect(element.textContent).toContain('± 5 %');
   });
 });
