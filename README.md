@@ -241,6 +241,10 @@ before any Command exists; the component then says nothing can deliver it yet.
 <ije-setpoint device-id="12"></ije-setpoint>
 ```
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Yoyo-MQ/ije/main/assets/screenshots/setpoint.png" width="420" alt="The ije-setpoint element: a target with its range, the Command that delivers it, and the last send queued because the device is offline" />
+</p>
+
 The API key needs `device:read` to show targets and `device:write` to change them. The
 Command picker is searchable (it searches Commands on the server as you type) and needs `command:read`, and "Send it now" needs `command:run` plus
 `device:write` on the device. Without `command:read` the picker lists only "None yet".
