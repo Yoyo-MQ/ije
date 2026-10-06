@@ -51,13 +51,15 @@ export class IjeCommandsClient {
   }
 
   /** Sends the saved Command to the devices over a protocol it allows, and records the run against the Command. */
-  async run(command: IjeCommand, deviceIds: number[]): Promise<void> {
+  /** Resolves with the devices the command was queued for because they are offline; those run it when they reconnect. */
+  async run(command: IjeCommand, deviceIds: number[]): Promise<{ queuedDeviceIds: number[] }> {
     const protocol = chooseCommandProtocol(command);
     if (!protocol) throw new Error(`[Yoyo ije] Command "${command.title}" allows neither MQTT nor TCP.`);
-    await this.http.post(protocol === 'MQTT' ? '/commands/mqtt' : '/commands/tcp', {
+    const result = await this.http.post<{ queued_device_ids?: number[] } | undefined>(protocol === 'MQTT' ? '/commands/mqtt' : '/commands/tcp', {
       action: JSON.stringify(command.message_content),
       device_ids: deviceIds,
       command_uuid: command.uuid,
     });
+    return { queuedDeviceIds: result?.queued_device_ids ?? [] };
   }
 }

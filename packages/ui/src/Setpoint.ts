@@ -34,6 +34,8 @@ const STATE_COLORS: Record<IjeSetpointState, { color: string; background: string
 export interface IjeSetpointEventDetail {
   deviceId: number;
   fieldKey: string;
+  /** On `ije-command-sent`: true when the device is offline and the command is stored until it reconnects. */
+  isQueued?: boolean;
 }
 
 /**
@@ -180,10 +182,10 @@ export class IjeSetpoint extends HTMLElement {
     return fallback;
   }
 
-  private notify(name: string, fieldKey: string) {
+  private notify(name: string, fieldKey: string, isQueued?: boolean) {
     const deviceId = this.deviceId;
     if (deviceId == null) return;
-    this.dispatchEvent(new CustomEvent<IjeSetpointEventDetail>(name, { bubbles: true, detail: { deviceId, fieldKey } }));
+    this.dispatchEvent(new CustomEvent<IjeSetpointEventDetail>(name, { bubbles: true, detail: { deviceId, fieldKey, ...(isQueued === undefined ? {} : { isQueued }) } }));
   }
 
   private savedSetpoint(fieldKey: string): IjeSetpointData | undefined {
@@ -195,7 +197,8 @@ export class IjeSetpoint extends HTMLElement {
     const existing = this.drafts.get(field.field_key);
     if (existing) return existing;
     const saved = this.savedSetpoint(field.field_key);
-    const reading = typeof saved?.measured?.value === 'number' ? saved.measured.value : null;
+    const readingCandidate = saved?.measured?.value ?? field.measured_value;
+    const reading = typeof readingCandidate === 'number' ? readingCandidate : null;
     return {
       target: saved?.target_value ?? (reading != null ? clampSetpointValue(reading, -Infinity) : DEFAULT_TARGET),
       tolerance: saved?.tolerance_value ?? DEFAULT_TOLERANCE,
@@ -409,9 +412,9 @@ export class IjeSetpoint extends HTMLElement {
       return;
     }
     await this.run(field.field_key, async () => {
-      await Ije.commands.run(command, [deviceId]);
+      const { queuedDeviceIds } = await Ije.commands.run(command, [deviceId]);
       this.response = await Ije.setpoints.list(deviceId);
-      this.notify('ije-command-sent', field.field_key);
+      this.notify('ije-command-sent', field.field_key, queuedDeviceIds.includes(deviceId));
     }, 'Could not send the Command.');
   }
 

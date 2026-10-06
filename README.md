@@ -253,7 +253,7 @@ Command picker is searchable (it searches Commands on the server as you type) an
 | Event | Detail |
 |-------|--------|
 | `ije-setpoint-saved` / `ije-setpoint-removed` | `{ deviceId, fieldKey }` |
-| `ije-command-sent` | `{ deviceId, fieldKey }`: the attached Command was sent to the device |
+| `ije-command-sent` | `{ deviceId, fieldKey, isQueued }`: the attached Command was sent; `isQueued` is true when the device is offline and the command waits for it to reconnect |
 | `ije-create-command` | `{ deviceId, fieldKey }`: the person asked to create a Command. Open your own form (`Ije.commands.create(...)`), then call `refreshCommands()` |
 | `ije-error` | `{ message }` |
 
