@@ -44,7 +44,7 @@ export type {
   SaveSetpointParams,
 } from './setpointsClient';
 export { IjeSetpointsClient } from './setpointsClient';
-export type { CreateCommandParams, IjeCommand, IjeCommandProtocol } from './commandsClient';
+export type { CreateCommandParams, IjeCommand, IjeCommandProtocol, IjeCommandRun, IjeCommandRunStatus } from './commandsClient';
 export { IjeCommandsClient, chooseCommandProtocol } from './commandsClient';
 
 export interface SdkConfig {

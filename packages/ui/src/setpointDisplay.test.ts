@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canSendCommand, clampSetpointValue, commandTriggerLabel, escapeHtml, isDraftDirty, nextHighlightIndex, rangeBarGeometry } from './setpointDisplay';
+import { describeLastSend, formatAgo, canSendCommand, clampSetpointValue, commandTriggerLabel, escapeHtml, isDraftDirty, nextHighlightIndex, rangeBarGeometry } from './setpointDisplay';
 
 describe('clampSetpointValue', () => {
   it('rounds to the nearest half step', () => {
@@ -95,5 +95,48 @@ describe('nextHighlightIndex', () => {
 
   it('highlights nothing when there are no options', () => {
     expect(nextHighlightIndex(0, 1, 0)).toBe(-1);
+  });
+});
+
+describe('formatAgo', () => {
+  const now = new Date('2026-10-05T12:00:00Z').getTime();
+
+  it('reads minutes, hours and days', () => {
+    expect(formatAgo('2026-10-05T11:57:00Z', now)).toBe('3 min ago');
+    expect(formatAgo('2026-10-05T10:00:00Z', now)).toBe('2 h ago');
+    expect(formatAgo('2026-10-01T12:00:00Z', now)).toBe('4 d ago');
+  });
+
+  it('says just now for the last minute, even if the clocks disagree slightly', () => {
+    expect(formatAgo('2026-10-05T11:59:40Z', now)).toBe('just now');
+    expect(formatAgo('2026-10-05T12:00:05Z', now)).toBe('just now');
+  });
+});
+
+describe('describeLastSend', () => {
+  const now = new Date('2026-10-05T12:00:00Z').getTime();
+  const at = '2026-10-05T11:57:00Z';
+
+  it('says nothing for a Command that was never sent', () => {
+    expect(describeLastSend(null, now)).toBeNull();
+  });
+
+  it('treats a sent run as complete', () => {
+    expect(describeLastSend({ status_slug: 'sent', created_at: at }, now)).toEqual({ text: 'Last sent 3 min ago.', tone: 'ok', isIncomplete: false });
+  });
+
+  it('flags a queued run as incomplete because the device is offline', () => {
+    const description = describeLastSend({ status_slug: 'queued', created_at: at }, now);
+
+    expect(description?.isIncomplete).toBe(true);
+    expect(description?.tone).toBe('waiting');
+    expect(description?.text).toContain('device is offline');
+  });
+
+  it('flags a failed run as incomplete and includes the reason', () => {
+    const description = describeLastSend({ status_slug: 'failed', error_message: 'no MQTT client found', created_at: at }, now);
+
+    expect(description?.isIncomplete).toBe(true);
+    expect(description?.text).toBe('Last send failed 3 min ago. no MQTT client found.');
   });
 });

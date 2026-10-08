@@ -1,5 +1,5 @@
 import { Ije, IjeApiError } from '@yoyomq/ije-core';
-import type { IjeCommand, IjeSetpointData, IjeSetpointField, IjeSetpointState, IjeSetpointsResponse } from '@yoyomq/ije-core';
+import type { IjeCommand, IjeCommandRun, IjeSetpointData, IjeSetpointField, IjeSetpointState, IjeSetpointsResponse } from '@yoyomq/ije-core';
 import { createPoweredByYoyo } from './branding';
 import {
   NO_COMMAND_VALUE,
@@ -8,12 +8,14 @@ import {
   canSendCommand,
   clampSetpointValue,
   commandTriggerLabel,
+  describeLastSend,
   escapeHtml,
   formatSetpointValue,
   isDraftDirty,
   nextHighlightIndex,
   rangeBarGeometry,
   SETPOINT_STEP,
+  type LastSendDescription,
   type SetpointDraft,
 } from './setpointDisplay';
 
@@ -36,6 +38,8 @@ export interface IjeSetpointEventDetail {
   fieldKey: string;
   /** On `ije-command-sent`: true when the device is offline and the command is stored until it reconnects. */
   isQueued?: boolean;
+  /** On `ije-delivery-incomplete`: the last send's status, `queued` or `failed`. */
+  statusSlug?: 'queued' | 'failed';
 }
 
 /**
@@ -46,9 +50,12 @@ export interface IjeSetpointEventDetail {
  * Attributes: `device-id` (required), `field-key` (show only this field, otherwise every field that can have a target), `title` (heading, default "Targets"), `refresh-interval` (seconds between state
  * refreshes, default 15, 0 turns it off).
  *
- * Events: `ije-setpoint-saved`, `ije-setpoint-removed`, `ije-command-sent` (detail: `{ deviceId, fieldKey }`), and
- * `ije-create-command` (same detail), fired when the person asks to create a Command so the host can open its own flow;
- * call `refreshCommands()` once the Command exists. `ije-error` carries `{ message }`.
+ * Events: `ije-setpoint-saved`, `ije-setpoint-removed`, `ije-command-sent` (detail: `{ deviceId, fieldKey, isQueued }`),
+ * `ije-delivery-incomplete` (detail: `{ deviceId, fieldKey, statusSlug }`, once per field when the element loads a device whose
+ * target's last send is still queued or failed), and `ije-create-command` (detail: `{ deviceId, fieldKey }`), fired when the person
+ * asks to create a Command so the host can open its own flow; call `refreshCommands()` once the Command exists. `ije-error`
+ * carries `{ message }`. "Sent" means the platform wrote the command to the device's connection or published it; the device does
+ * not acknowledge it.
  */
 export class IjeSetpoint extends HTMLElement {
   private response: IjeSetpointsResponse | null = null;
@@ -56,6 +63,9 @@ export class IjeSetpoint extends HTMLElement {
   // Every Command seen so far, including ones that only a search returned, so a picked result keeps its title and can be sent.
   private knownCommands = new Map<string, IjeCommand>();
   private commandsUnavailable = false;
+  // The newest send of each saved target's Command, by field key; null when it was never sent or could not be read.
+  private lastRuns = new Map<string, IjeCommandRun | null>();
+  private hasCheckedDelivery = false;
   private drafts = new Map<string, SetpointDraft>();
   private addingFieldKeys = new Set<string>();
   private busyFieldKeys = new Set<string>();
@@ -82,6 +92,8 @@ export class IjeSetpoint extends HTMLElement {
       this.render();
     } else if (name === 'device-id') {
       this.response = null;
+      this.lastRuns.clear();
+      this.hasCheckedDelivery = false;
       this.drafts.clear();
       this.addingFieldKeys.clear();
       this.isLoading = true;
@@ -152,11 +164,33 @@ export class IjeSetpoint extends HTMLElement {
     try {
       this.response = await Ije.setpoints.list(deviceId);
       this.errorMessage = null;
+      await this.loadLastRuns(deviceId);
     } catch (error) {
       this.errorMessage = this.describeError(error, 'Could not load the targets.');
     } finally {
       this.isLoading = false;
       this.render();
+    }
+  }
+
+  /** Looks up the newest send for every saved target that has a Command. A key that cannot read runs just shows no delivery line. */
+  private async loadLastRuns(deviceId: number) {
+    const targets = (this.response?.device_field_setpoints ?? []).filter((setpoint) => setpoint.command_uuid);
+    const loaded = await Promise.all(
+      targets.map(async (setpoint) => {
+        try {
+          return [setpoint.field_key, await Ije.commands.latestRun(deviceId, setpoint.command_uuid as string)] as const;
+        } catch {
+          return [setpoint.field_key, null] as const;
+        }
+      }),
+    );
+    if (deviceId !== this.deviceId) return;
+    this.lastRuns = new Map(loaded);
+    if (this.hasCheckedDelivery) return;
+    this.hasCheckedDelivery = true;
+    for (const [fieldKey, run] of loaded) {
+      if (run && run.status_slug !== 'sent') this.notify('ije-delivery-incomplete', fieldKey, undefined, run.status_slug);
     }
   }
 
@@ -182,10 +216,15 @@ export class IjeSetpoint extends HTMLElement {
     return fallback;
   }
 
-  private notify(name: string, fieldKey: string, isQueued?: boolean) {
+  private notify(name: string, fieldKey: string, isQueued?: boolean, statusSlug?: 'queued' | 'failed') {
     const deviceId = this.deviceId;
     if (deviceId == null) return;
-    this.dispatchEvent(new CustomEvent<IjeSetpointEventDetail>(name, { bubbles: true, detail: { deviceId, fieldKey, ...(isQueued === undefined ? {} : { isQueued }) } }));
+    this.dispatchEvent(
+      new CustomEvent<IjeSetpointEventDetail>(name, {
+        bubbles: true,
+        detail: { deviceId, fieldKey, ...(isQueued === undefined ? {} : { isQueued }), ...(statusSlug === undefined ? {} : { statusSlug }) },
+      }),
+    );
   }
 
   private savedSetpoint(fieldKey: string): IjeSetpointData | undefined {
@@ -201,7 +240,7 @@ export class IjeSetpoint extends HTMLElement {
     const reading = typeof readingCandidate === 'number' ? readingCandidate : null;
     return {
       target: saved?.target_value ?? (reading != null ? clampSetpointValue(reading, -Infinity) : DEFAULT_TARGET),
-      tolerance: saved?.tolerance_value ?? DEFAULT_TOLERANCE,
+      tolerance: saved?.tolerance_value ?? field.default_tolerance ?? DEFAULT_TOLERANCE,
       commandValue: saved?.command_uuid ?? NO_COMMAND_VALUE,
     };
   }
@@ -414,6 +453,7 @@ export class IjeSetpoint extends HTMLElement {
     await this.run(field.field_key, async () => {
       const { queuedDeviceIds } = await Ije.commands.run(command, [deviceId]);
       this.response = await Ije.setpoints.list(deviceId);
+      await this.loadLastRuns(deviceId);
       this.notify('ije-command-sent', field.field_key, queuedDeviceIds.includes(deviceId));
     }, 'Could not send the Command.');
   }
@@ -444,6 +484,7 @@ export class IjeSetpoint extends HTMLElement {
     const notice = state ? SETPOINT_STATE_NOTICES[state] : null;
     const canSend = canSendCommand(state, saved?.command_uuid ?? null);
     const dirty = isDraftDirty(saved, draft);
+    const lastSend = saved?.command_uuid ? describeLastSend(this.lastRuns.get(field.field_key) ?? null, Date.now()) : null;
     return `
       <div style="${cardStyle}">
         <div style="display:flex; justify-content: space-between; align-items: center; gap: 8px;">
@@ -470,6 +511,7 @@ export class IjeSetpoint extends HTMLElement {
         ${this.commandsUnavailable ? '<p style="margin:0; font-size: 12px; color: var(--yoyo-muted, #888);">This API key cannot list Commands.</p>' : ''}
         ${draft.commandValue === NO_COMMAND_VALUE && state !== 'needs_command' ? '<p style="margin:0; font-size: 12px; color: var(--yoyo-muted, #888);">Without a Command the target is saved but cannot reach the device.</p>' : ''}
         ${notice && state ? this.notice(state, notice, field.field_key, canSend, isBusy) : ''}
+        ${lastSend ? this.lastSendLine(lastSend, field.field_key, canSend, isBusy, saved?.command_uuid ?? null) : ''}
         <div style="display:flex; justify-content: flex-end; gap: 8px;">
           ${saved ? this.button('remove', field.field_key, 'Remove target', 'quiet', isBusy) : this.button('cancel', field.field_key, 'Cancel', 'quiet', isBusy)}
           ${this.button('save', field.field_key, isBusy ? 'Working…' : 'Save target', 'primary', isBusy || !dirty)}
@@ -547,6 +589,13 @@ export class IjeSetpoint extends HTMLElement {
     if (notice.action === 'create_command') action = this.link('create-command', fieldKey, 'Create a Command');
     else if (notice.action === 'send' && canSend && !isBusy) action = this.link('send', fieldKey, state === 'not_applied' ? 'Send it again' : 'Send it now');
     return `<div style="display:flex; flex-direction: column; gap: 6px; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--yoyo-foreground, inherit); background: ${background};"><span>${notice.text}</span>${action}</div>`;
+  }
+
+  private lastSendLine(lastSend: LastSendDescription, fieldKey: string, canSend: boolean, isBusy: boolean, commandUuid: string | null): string {
+    const colors = { ok: 'var(--yoyo-muted, #888)', waiting: '#d97706', failed: '#ef4444' };
+    // A state notice that already offers to send would repeat the same link.
+    const retry = lastSend.isIncomplete && !canSend && commandUuid && !isBusy ? this.link('send', fieldKey, 'Send it again') : '';
+    return `<div style="display:flex; flex-direction: column; gap: 4px; font-size: 12px; color: ${colors[lastSend.tone]};"><span>${escapeHtml(lastSend.text)}</span>${retry}</div>`;
   }
 
   private stepper(label: string, fieldKey: string, prop: 'target' | 'tolerance', valueText: string, disabled: boolean): string {

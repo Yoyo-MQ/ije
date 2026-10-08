@@ -15,7 +15,7 @@ async function connect(apiUrl: string, apiKey: string, deviceId: string) {
   targetsHost.replaceChildren();
   const element = document.createElement('ije-setpoint');
   element.setAttribute('device-id', deviceId);
-  for (const name of ['ije-setpoint-saved', 'ije-setpoint-removed', 'ije-command-sent', 'ije-create-command', 'ije-error']) {
+  for (const name of ['ije-setpoint-saved', 'ije-setpoint-removed', 'ije-command-sent', 'ije-delivery-incomplete', 'ije-create-command', 'ije-error']) {
     element.addEventListener(name, (event) => log(`${name} ${JSON.stringify((event as CustomEvent).detail)}`));
   }
   element.addEventListener('ije-create-command', () => {
